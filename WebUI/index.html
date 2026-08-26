@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#071116">
+  <script>document.documentElement.classList.toggle('enl',localStorage.getItem('enlightened')==='1')</script>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg">
+  <link rel="stylesheet" href="/index.css">
+  <link rel="stylesheet" href="/flashlight.css">
+  <script src="/flashlight.js" defer></script>
+  <title>Ingress Glyph</title>
+</head>
+<body>
+<main>
+  <nav aria-label="Primary navigation"><a href="/" aria-current="page">Main</a><a href="/draw">Draw</a><a href="/nearby">Nearby</a><a href="/settings">Settings</a></nav>
+  <h1 id="hello">Ingress Glyph</h1>
+  <aside id="timeWarning" class="warning" hidden><span id="timeWarningText">Controller time is not synchronized.</span><button id="syncTimeMain" type="button">Sync browser time</button></aside>
+  <section>
+    <h2>Mode</h2>
+    <label>Playback mode<select id="mode"><option value="sequence">Glyph Sequence</option><option value="random">Random Glyphs</option><option value="draw">Draw</option></select></label>
+    <div id="sequencePanel">
+      <h3>Glyph sequence</h3>
+      <div class="tabs"><button id="knownTab" type="button">Known sequence</button><button id="customTab" type="button">Build your own</button></div>
+      <div id="knownBuilder">
+        <div class="filter-grid"><label>Find sequence by name<input id="knownSearch" type="search" placeholder="Search sequence names"></label><label>Find by glyph<select id="knownGlyph"><option value="">Any glyph</option></select></label></div>
+        <div class="tabs small"><button id="visualSequences" type="button">Visual sequences</button><button id="namedSequences" type="button">Names</button></div>
+        <p id="knownCount" class="muted"></p>
+        <div id="knownList" class="known-list" aria-label="Known sequences"></div>
+      </div>
+      <div id="customBuilder" hidden>
+        <div class="tabs small"><button id="nameTab" type="button">Find by name</button><button id="drawTab" type="button">Draw glyph</button></div>
+        <div id="namePicker">
+          <label>Glyph name<input id="search" type="search" placeholder="Search glyph name"></label>
+          <div class="row"><select id="results" aria-label="Matching glyphs"></select><button id="add" type="button">Add</button></div>
+        </div>
+        <div id="drawPicker" hidden>
+          <canvas id="glyphDraw" width="320" height="320" aria-label="Draw a glyph by connecting highlighted nodes"></canvas>
+          <p class="muted">Drag through the nodes in one stroke. Direction does not matter.</p>
+          <div class="row draw-match"><select id="drawResults" aria-label="Glyphs matching the drawing"></select><button id="addDraw" type="button">Add match</button></div>
+          <button id="clearGlyph" class="secondary" type="button">Clear drawing</button>
+        </div>
+        <div id="sequence" class="sequence"></div>
+        <p class="muted">Up to five glyph IDs. Use the arrows to reorder them.</p>
+      </div>
+    </div>
+    <p id="randomPanel" class="muted" hidden>A new random glyph is selected after every interval.</p>
+    <p id="drawPanel" class="muted" hidden>Saved <a href="/draw">Draw pages</a> play in their current order.</p>
+    <label>Switch interval (seconds)<input id="interval" type="number" min=".1" max="3600" step=".1" value="2"></label>
+  </section>
+  <section id="glyphColors">
+    <h2>Glyph colors</h2>
+    <div class="color-head" aria-hidden="true"><span></span><span>RGB</span><span>White mix</span><span>Brightness</span></div>
+    <div class="color-row"><strong>Line</strong><input id="line" type="color" value="#00a0ff" aria-label="Line RGB"><label><span>White <output id="lineWValue">0%</output></span><input id="lineW" type="range" min="0" max="100" value="0" aria-label="Line white mix"></label><label><span>Level <output id="lineBrightnessValue">100%</output></span><input id="lineBrightness" type="range" min="0" max="100" value="100" aria-label="Line brightness"></label></div>
+    <div class="color-row"><strong>Core</strong><input id="core" type="color" value="#00ffff" aria-label="Core RGB"><label><span>White <output id="coreWValue">0%</output></span><input id="coreW" type="range" min="0" max="100" value="0" aria-label="Core white mix"></label><label><span>Level <output id="coreBrightnessValue">100%</output></span><input id="coreBrightness" type="range" min="0" max="100" value="100" aria-label="Core brightness"></label></div>
+  </section>
+  <div class="actions"><button id="save" class="save saved" type="button">Saved</button></div>
+  <p id="message" aria-live="polite"></p>
+</main>
+<script>
+const $=id=>document.getElementById(id),rgb=h=>[1,3,5].map(i=>parseInt(h.slice(i,i+2),16)),hex=c=>'#'+c.slice(0,3).map(v=>v.toString(16).padStart(2,'0')).join('');
+const node={0:[.5,.08],1:[.86,.29],2:[.86,.71],3:[.5,.92],4:[.14,.71],5:[.14,.29],6:[.68,.395],7:[.68,.605],8:[.32,.605],9:[.32,.395],a:[.5,.5]};
+let glyphs=[],knownSequences=[],seq=[],loading=true,previewTimer,builder='custom',picker='name',knownView='visual',drawing=false,currentNode='',drawn=[];
+function theme(enlightened){document.documentElement.classList.toggle('enl',enlightened);localStorage.setItem('enlightened',enlightened?'1':'0');document.querySelector('meta[name="theme-color"]').content=enlightened?'#071408':'#071116'}
+function glyphSegments(pattern){let out=[];for(let i=0;i+1<pattern.length;i+=2)out.push(pattern.slice(i,i+2));return out}
+function segmentKey(a,b){return a<b?a+b:b+a}
+function drawGlyph(canvas,pattern,active=[]){let c=canvas.getContext('2d'),w=canvas.width,h=canvas.height,style=getComputedStyle(document.documentElement),accent=style.getPropertyValue('--cyan').trim()||'#00d9f5',background=style.getPropertyValue('--bg').trim()||'#071116';c.clearRect(0,0,w,h);c.fillStyle=background;c.fillRect(0,0,w,h);c.strokeStyle=accent;c.lineWidth=Math.max(3,w/70);c.lineCap='round';for(let s of glyphSegments(pattern)){let p=node[s[0]],q=node[s[1]];if(!p||!q)continue;c.beginPath();c.moveTo(p[0]*w,p[1]*h);c.lineTo(q[0]*w,q[1]*h);c.stroke()}c.fillStyle='#d8faff';for(let p of Object.values(node)){c.beginPath();c.arc(p[0]*w,p[1]*h,Math.max(3,w/80),0,Math.PI*2);c.fill()}if(active.length){c.strokeStyle='#ffb347';for(let s of active){let p=node[s[0]],q=node[s[1]];c.beginPath();c.moveTo(p[0]*w,p[1]*h);c.lineTo(q[0]*w,q[1]*h);c.stroke()}}}
+function filteredGlyphs(query){let q=query.trim().toLowerCase();return glyphs.filter(g=>(g.name+' '+g.pattern).toLowerCase().includes(q)).slice(0,80)}
+function glyphResults(){let f=filteredGlyphs($('search').value),select=$('results');select.replaceChildren(...f.map(g=>new Option(`${g.name} (#${g.id})`,g.id)));if(!f.length)select.add(new Option('No matches',''))}
+function sequenceLabel(ids){return ids.map(id=>glyphs[id]?.name||`#${id}`).join(' / ')}
+function sameSequence(a,b){return a.length===b.length&&a.every((id,i)=>id===b[i])}
+function useKnown(ids){seq=ids.slice();setBuilder('known');render();knownResults();dirty()}
+function knownResults(){let q=$('knownSearch').value.trim().toLowerCase(),glyphValue=$('knownGlyph').value,glyphId=glyphValue===''?null:+glyphValue,all=knownSequences.map((ids,id)=>({ids,id,label:sequenceLabel(ids)})).filter(x=>x.label.toLowerCase().includes(q)&&(glyphId===null||x.ids.includes(glyphId))),shown=all.slice(0,60),list=$('knownList');$('knownCount').textContent=all.length>shown.length?`Showing ${shown.length} of ${all.length}; refine the filters to see more.`:`${all.length} sequence${all.length===1?'':'s'}`;list.replaceChildren();for(let entry of shown){let card=document.createElement('article');card.className='known-sequence'+(sameSequence(entry.ids,seq)?' selected':'');if(knownView==='visual'){let strip=document.createElement('div');strip.className='mini-sequence';for(let id of entry.ids){let canvas=document.createElement('canvas');canvas.width=84;canvas.height=84;canvas.title=glyphs[id].name;strip.append(canvas);drawGlyph(canvas,glyphs[id].pattern)}card.append(strip)}else{let label=document.createElement('span');label.className='known-name';label.textContent=entry.label;card.append(label)}let use=document.createElement('button');use.type='button';use.textContent=sameSequence(entry.ids,seq)?'Selected':'Use';use.onclick=()=>useKnown(entry.ids);card.append(use);list.append(card)}if(!shown.length)list.innerHTML='<p class="muted">No matching known sequences.</p>'}
+function render(){let box=$('sequence');box.replaceChildren();if(!seq.length)box.innerHTML='<p class="muted">No glyphs selected.</p>';seq.forEach((id,i)=>{let item=document.createElement('div');item.className='item';let info=document.createElement('span');info.className='item-info';let mini=document.createElement('canvas');mini.width=58;mini.height=58;let name=document.createElement('span');name.textContent=`${i+1}. ${glyphs[id]?.name||'Unknown'} (#${id})`;info.append(mini,name);item.append(info);drawGlyph(mini,glyphs[id]?.pattern||'');for(let [text,d,label] of [['\u2191',-1,'Move up'],['\u2193',1,'Move down'],['\u00d7',0,'Remove']]){let b=document.createElement('button');b.type='button';b.textContent=text;b.title=label;b.onclick=()=>d?move(i,d):removeGlyph(i);item.append(b)}box.append(item)})}
+function setBuilder(value){builder=value;$('knownBuilder').hidden=value!=='known';$('customBuilder').hidden=value!=='custom';$('knownTab').classList.toggle('active',value==='known');$('customTab').classList.toggle('active',value==='custom')}
+function setPicker(value){picker=value;$('namePicker').hidden=value!=='name';$('drawPicker').hidden=value!=='draw';$('nameTab').classList.toggle('active',value==='name');$('drawTab').classList.toggle('active',value==='draw');if(value==='draw')drawInput()}
+function setKnownView(value){knownView=value;$('visualSequences').classList.toggle('active',value==='visual');$('namedSequences').classList.toggle('active',value==='names');knownResults()}
+function move(i,d){let j=i+d;if(j<0||j>=seq.length)return;[seq[i],seq[j]]=[seq[j],seq[i]];render();dirty()}
+function removeGlyph(i){seq.splice(i,1);render();dirty()}
+function addGlyph(id){if(Number.isInteger(id)&&id>=0&&id<glyphs.length&&seq.length<5){setBuilder('custom');seq.push(id);render();dirty()}}
+function showMode(){let mode=$('mode').value;$('sequencePanel').hidden=mode!=='sequence';$('randomPanel').hidden=mode!=='random';$('drawPanel').hidden=mode!=='draw';$('glyphColors').hidden=mode==='draw'}
+function updateOutputs(){for(let id of ['lineW','coreW','lineBrightness','coreBrightness'])$(id+'Value').textContent=$(id).value+'%'}
+function checkTime(status){let browser=Math.floor(Date.now()/1000),wrong=!status.timeValid||Math.abs(status.unixTime-browser)>60;$('timeWarning').hidden=!wrong;$('timeWarningText').textContent=!status.timeValid?'Controller UTC time is not synchronized.':'Controller time differs from this browser by more than one minute.'}
+async function syncTime(){try{let r=await fetch('/api/time',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({timestamp:Math.floor(Date.now()/1000)})});if(!r.ok)throw Error();checkTime(await fetch('/api/status').then(x=>x.json()))}catch(e){$('timeWarningText').textContent='Time synchronization failed.'}}
+function payload(){let line=rgb($('line').value),core=rgb($('core').value),white=id=>Math.round(+$(id).value*255/100);return{mode:$('mode').value,sequence:seq,interval:Math.round(+$('interval').value*1000),line:[...line,white('lineW')],core:[...core,white('coreW')],lineBrightness:+$('lineBrightness').value,coreBrightness:+$('coreBrightness').value}}
+function setSave(state,text){$('save').className='save '+state;$('save').textContent=text}
+function valid(){let seconds=+$('interval').value;if(seconds<.1||seconds>3600)return'Interval must be between 0.1 and 3600 seconds.';if($('mode').value==='sequence'&&!seq.length)return'Add at least one glyph.';return''}
+function dirty(){if(loading)return;setSave('dirty','Save changes');clearTimeout(previewTimer);previewTimer=setTimeout(preview,120)}
+async function preview(){let error=valid();if(error)return;try{let r=await fetch('/api/display/preview',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload())});if(!r.ok)throw Error();$('message').textContent='Live preview active. Press Save to keep it.'}catch(e){$('message').textContent='Live preview failed.'}}
+function nearestNode(event){let c=$('glyphDraw'),r=c.getBoundingClientRect(),x=(event.clientX-r.left)/r.width,y=(event.clientY-r.top)/r.height,best='',distance=.11;for(let [id,p] of Object.entries(node)){let d=Math.hypot(x-p[0],y-p[1]);if(d<distance){best=id;distance=d}}return best}
+function drawnMatches(){let wanted=new Set(drawn),ranked=glyphs.map(g=>{let have=new Set(glyphSegments(g.pattern).map(s=>segmentKey(s[0],s[1]))),same=[...wanted].filter(s=>have.has(s)).length,union=new Set([...wanted,...have]).size;return{id:g.id,score:union?same/union:0}}).sort((a,b)=>b.score-a.score).slice(0,12),select=$('drawResults');select.replaceChildren(...ranked.map(x=>new Option(`${glyphs[x.id].name} - ${Math.round(x.score*100)}%`,x.id)));if(!drawn.length)select.replaceChildren(new Option('Draw through at least two nodes',''))}
+function drawInput(){let pattern=drawn.join('');drawGlyph($('glyphDraw'),'',drawn);drawnMatches()}
+let drawCanvas=$('glyphDraw');drawCanvas.onpointerdown=e=>{let n=nearestNode(e);if(!n)return;drawing=true;currentNode=n;drawn=[];drawCanvas.setPointerCapture(e.pointerId);drawInput()};drawCanvas.onpointermove=e=>{if(!drawing)return;let n=nearestNode(e);if(!n||n===currentNode)return;let key=segmentKey(currentNode,n);if(!drawn.includes(key))drawn.push(key);currentNode=n;drawInput()};drawCanvas.onpointerup=drawCanvas.onpointercancel=()=>{drawing=false;drawnMatches()};
+$('knownTab').onclick=()=>setBuilder('known');$('customTab').onclick=()=>setBuilder('custom');$('nameTab').onclick=()=>setPicker('name');$('drawTab').onclick=()=>setPicker('draw');$('visualSequences').onclick=()=>setKnownView('visual');$('namedSequences').onclick=()=>setKnownView('names');
+$('knownSearch').oninput=knownResults;$('knownGlyph').onchange=knownResults;$('search').oninput=glyphResults;
+$('add').onclick=()=>{let value=$('results').value;if(value!=='')addGlyph(+value)};$('addDraw').onclick=()=>{let value=$('drawResults').value;if(value!=='')addGlyph(+value)};$('clearGlyph').onclick=()=>{drawn=[];currentNode='';drawInput()};
+$('mode').onchange=()=>{showMode();dirty()};$('syncTimeMain').onclick=syncTime;for(let id of ['interval','line','core','lineW','coreW','lineBrightness','coreBrightness'])$(id).addEventListener('input',()=>{updateOutputs();dirty()});
+$('save').onclick=async()=>{let error=valid();if(error){setSave('failed','Save failed');$('message').textContent=error;return}clearTimeout(previewTimer);try{let r=await fetch('/api/display',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload())});if(!r.ok)throw Error(await r.text());setSave('saved','Saved');$('message').textContent='Mode and glyph IDs saved.'}catch(e){setSave('failed','Save failed');$('message').textContent=e.message||'Could not save display settings.'}};
+async function init(){try{let [list,sequences,display,status]=await Promise.all([fetch('/api/glyphs').then(r=>r.json()),fetch('/api/glyph-sequences').then(r=>r.json()),fetch('/api/display').then(r=>r.json()),fetch('/api/status').then(r=>r.json())]);glyphs=list;knownSequences=sequences;seq=display.sequence?.filter(id=>id<glyphs.length);if(!seq.length)seq=[0];theme(status.enlightened);checkTime(status);$('mode').value=display.mode;$('interval').value=display.interval/1000;$('line').value=hex(display.line);$('core').value=hex(display.core);$('lineW').value=Math.round(display.line[3]*100/255);$('coreW').value=Math.round(display.core[3]*100/255);$('lineBrightness').value=display.lineBrightness;$('coreBrightness').value=display.coreBrightness;$('hello').textContent=status.username?`Hello ${status.username}`:'Ingress Glyph';$('knownGlyph').append(...glyphs.map(g=>new Option(`${g.name} (#${g.id})`,g.id)));glyphResults();let known=knownSequences.findIndex(ids=>sameSequence(ids,seq));setBuilder(known>=0?'known':'custom');setKnownView('visual');setPicker('name');render();showMode();updateOutputs();loading=false;setSave('saved','Saved')}catch(e){$('message').textContent='Could not load glyph or sequence data.';setSave('failed','Load failed')}}
+if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});init();
+</script>
+</body>
+</html>

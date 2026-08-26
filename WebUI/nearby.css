@@ -1,0 +1,30 @@
+:root { color-scheme: dark; --accent: #00d9f5; --bg: #071116; --card: #102229; --line: #286070; }
+html.enl { --accent: #78f04b; --bg: #071408; --card: #102b18; --line: #397a3d; }
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: #e2fbff; font: 15px system-ui; }
+main { max-width: 760px; margin: auto; padding: 10px 12px 35px; }
+nav { display: flex; gap: 7px; position: sticky; top: 0; z-index: 3; padding: 8px 0; background: #071116ee; }
+nav > * { flex: 1; min-width: 0; }
+a, button, input { min-height: 44px; padding: 9px; border-radius: 9px; border: 1px solid var(--line); background: #102930; color: white; font: inherit; }
+a, button { background: #007f91; text-align: center; text-decoration: none; font-weight: 700; }
+h1 { color: var(--accent); }
+section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin: 12px 0; }
+label { display: grid; gap: 6px; }
+.people { display: grid; gap: 8px; margin-top: 10px; }
+.person { display: flex; justify-content: space-between; gap: 10px; padding: 11px; border: 1px solid var(--line); border-radius: 10px; background: #09191f; }
+.person > div { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.person > span { text-align: right; font-size: .9em; }
+.person small { display: block; opacity: .72; margin-top: 3px; }
+.agent-res { color: #43cfff; }
+.agent-enl { color: #78f04b; }
+.person.friend { border-color: #f0c84b; }
+.person.emergency-person { border-color: #ff5656; background: #3c0c11; }
+.emergency-note { display: block; margin-top: 4px; color: #ff7777; text-transform: uppercase; font-size: .78em; }
+.friend-button { display: inline-flex; align-items: center; min-height: 36px; margin: 0; padding: 6px 10px; background: #8b3c72; }
+.friend-button:disabled { opacity: .55; }
+.muted { opacity: .75; }
+html.enl nav { background: #071408ee; }
+html.enl a, html.enl button { background: #327d36; }
+html.enl input { background: #0a1f0e; }
+html.enl .person { background: #0a1c0d; }
+@media(max-width:520px) { nav { flex-wrap: wrap; } nav > * { flex-basis: 21%; } .person { flex-direction: column; } .person > span { text-align: left; } }

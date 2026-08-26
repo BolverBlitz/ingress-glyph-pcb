@@ -1,4 +1,6 @@
 # Prerequisites
+.pio/
+src/web_ui.h
 *.d
 
 # Compiled Object files

@@ -1,0 +1,19 @@
+[hidden] { display: none !important; }
+.flash-button { flex: 0 0 48px; min-width: 48px; padding: 8px; }
+.flash-button svg { width: 25px; height: 25px; fill: currentColor; }
+.flash-button.active { outline: 3px solid #fff4a8; background: #a87b00; }
+.flash-button.emergency { outline: 3px solid #ff6767; background: #a31e2a; }
+.remote-emergency-alert { position: sticky; top: 64px; z-index: 5; margin: 0 0 12px; padding: 12px; border: 2px solid #ff5656; border-radius: 13px; background: #4b0d12; color: #fff; font-weight: 700; text-align: center; box-shadow: 0 9px 25px #0008; }
+.remote-emergency-alert .agent-res { color: #43cfff; }
+.remote-emergency-alert .agent-enl { color: #78f04b; }
+.flash-panel { position: sticky; top: 64px; z-index: 4; padding: 12px; margin: 0 0 12px; background: var(--card, #102229); border: 1px solid var(--line, #286070); border-radius: 13px; box-shadow: 0 9px 25px #0008; }
+.flash-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.flash-head button { min-width: 110px; }
+.flash-panel label { display: grid; grid-template-columns: 1fr auto; gap: 6px; margin: 10px 0; }
+.flash-panel label input { grid-column: 1 / -1; width: 100%; padding: 0; border: 0; }
+.temperature-labels { display: flex; justify-content: space-between; margin-top: -5px; font-size: .78em; opacity: .7; }
+.flash-panel .muted { opacity: .75; font-size: .9em; }
+html.enl .flash-button.active { background: #718800; }
+html.enl .flash-button.emergency { background: #a31e2a; }
+html.enl .remote-emergency-alert { background: #4b0d12; border-color: #ff5656; }
+html.enl .flash-panel { background: #102b18; border-color: #397a3d; }

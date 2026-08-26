@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#071116">
+  <script>document.documentElement.classList.toggle('enl',localStorage.getItem('enlightened')==='1')</script>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg">
+  <link rel="stylesheet" href="/settings.css">
+  <link rel="stylesheet" href="/flashlight.css">
+  <script src="/flashlight.js" defer></script>
+  <title>Glyph Settings</title>
+</head>
+<body>
+<main>
+  <nav aria-label="Primary navigation"><a href="/">Main</a><a href="/draw">Draw</a><a href="/nearby">Nearby</a><a href="/settings" aria-current="page">Settings</a></nav>
+  <h1>Settings</h1>
+  <section>
+    <h2>Global settings</h2>
+    <label>Username<input id="username" maxlength="64" autocomplete="nickname"></label>
+    <label>Faction<select id="faction"><option value="res">Resistance</option><option value="enl">Enlightened</option></select></label>
+    <label>Time format<select id="timeFormat"><option value="24">24-hour</option><option value="12">12-hour</option></select></label>
+    <label>LED display rotation<select id="rotation"><option value="0">0&deg;</option><option value="180">180&deg;</option></select></label>
+    <label>Brightness <span id="bv"></span><input id="brightness" type="range" min="0" max="100"></label>
+    <label class="check"><input id="bleBroadcast" type="checkbox"> Bluetooth proximity broadcasting</label>
+    <label class="check"><input id="friendMode" type="checkbox"> Friend Mode: display nearby friends' Agent Glyphs</label>
+    <div class="grid"><label>Minimum watts<input id="minW" type="number" min="0" max="4.5" step=".1"></label><label>Maximum watts<input id="maxW" type="number" min="0" max="4.5" step=".1"></label></div>
+  </section>
+  <section>
+    <h2>Wi-Fi profiles</h2>
+    <div class="tabs"><button class="tab" id="wifi1">WiFi 1</button><button class="tab" id="wifi2">WiFi 2</button></div>
+    <p class="muted">The controller tries WiFi 1 first, then WiFi 2, then falls back to its hotspot. Restart after saving to use changed Wi-Fi profiles.</p>
+    <p id="chosen"></p>
+    <div class="tabs"><button id="scan">Scan nearby Wi-Fi</button><button id="clear">Clear this Wi-Fi</button></div><div id="networks"></div>
+  </section>
+  <section>
+    <h2>Fallback hotspot</h2>
+    <p class="muted">Used only when neither saved Wi-Fi profile can connect. Restart after saving changes.</p>
+    <label>Hotspot name<input id="apSsid" maxlength="32" autocomplete="off"></label>
+    <label>Hotspot password<input id="apPassword" type="password" minlength="8" maxlength="63" autocomplete="new-password" placeholder="Leave blank to keep current password"></label>
+  </section>
+  <section>
+    <h2>Device status</h2>
+    <div class="storage"><span>ESP chip temperature</span><strong id="chipTemperature">&mdash;</strong></div>
+    <p class="muted">Internal die-sensor reading; this is not the ambient temperature.</p>
+  </section>
+  <section>
+    <h2>UTC time</h2>
+    <p id="timeState" class="muted">Checking controller time...</p>
+    <p id="ntpState" class="muted">Checking NTP status...</p>
+    <button id="syncTime" type="button">Sync browser time</button>
+  </section>
+  <section>
+    <h2>Storage</h2>
+    <div class="storage"><span>Global settings</span><strong id="storageSettings">&mdash;</strong><span>Main display</span><strong id="storageDisplay">&mdash;</strong><span>Draw pages</span><strong id="storageDraw">&mdash;</strong><span>Known people</span><strong id="storagePeople">&mdash;</strong><span>Encounter history</span><strong id="storageEncounters">&mdash;</strong><span>Other / filesystem overhead</span><strong id="storageOther">&mdash;</strong><span>Available</span><strong id="storageAvailable">&mdash;</strong></div>
+    <progress id="storageBar" max="1" value="0"></progress><p class="muted" id="storageTotal"></p>
+    <div class="storage-actions"><a href="/api/export/users.csv" download>Export user list</a><a href="/api/export/encounters.csv" download>Export encounter history</a><button id="resetProximity" class="danger" type="button">Reset users &amp; history</button></div>
+  </section>
+  <details>
+    <summary>Firmware update (OTA)<span class="version" id="firmwareVersion">v&mdash;</span></summary>
+    <div class="ota"><p class="muted">Select the <b>firmware.bin</b> produced by PlatformIO. Global settings and draw pages in LittleFS are retained. The controller restarts automatically after a successful update.</p><label>Firmware file<input id="firmware" type="file" accept=".bin,application/octet-stream"></label><button id="upload" disabled>Install firmware</button><progress id="otaProgress" max="100" value="0" hidden></progress><p id="otaMessage"></p></div>
+  </details>
+  <div class="actions"><button id="save" class="save saved">Saved</button><button id="restart" class="restart">Restart controller</button></div><p id="message"></p>
+</main>
+<script>
+const $=x=>document.getElementById(x);let active=0,loading=true,profiles=[{ssid:'',password:''},{ssid:'',password:''}];
+function theme(enlightened){document.documentElement.classList.toggle('enl',enlightened);localStorage.setItem('enlightened',enlightened?'1':'0');document.querySelector('meta[name="theme-color"]').content=enlightened?'#071408':'#071116'}
+function saveState(state,text){$('save').className='save '+state;$('save').textContent=text}
+function dirty(){if(!loading)saveState('dirty','Save changes')}
+function showProfile(){document.querySelectorAll('.tab').forEach((b,i)=>b.classList.toggle('active',i===active));$('chosen').textContent=profiles[active].ssid?`WiFi ${active+1}: ${profiles[active].ssid}`:`WiFi ${active+1} is not configured.`;$('networks').innerHTML=''}
+const bytes=n=>n<1024?n+' B':(n/1024).toFixed(n<10240?1:0)+' KiB';
+function formattedUtc(timestamp){return new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'medium',timeZone:'UTC',hour12:$('timeFormat').value==='12'}).format(new Date(timestamp*1000))+' UTC'}
+function showTime(s){let browser=Math.floor(Date.now()/1000),delta=s.timeValid?s.unixTime-browser:0;$('timeState').textContent=!s.timeValid?'Controller UTC time is not synchronized.':`Controller UTC: ${formattedUtc(s.unixTime)} (${Math.abs(delta)}s ${delta<0?'behind':'ahead'})`;$('ntpState').textContent=s.lastNtpSync?`Last NTP synchronization: ${formattedUtc(s.lastNtpSync)}.`:s.ntpActive?'NTP is active and waiting for synchronization.':'NTP starts automatically after Wi-Fi connects.'}
+function showChipTemperature(s){let value=Number(s.chipTemperatureC);$('chipTemperature').textContent=Number.isFinite(value)?value.toFixed(1)+' °C':'—'}
+async function refreshChipTemperature(){try{showChipTemperature(await fetch('/api/status').then(r=>r.json()))}catch(e){$('chipTemperature').textContent='—'}}
+async function init(){let [s,z,status]=await Promise.all([fetch('/api/settings').then(r=>r.json()),fetch('/api/storage').then(r=>r.json()),fetch('/api/status').then(r=>r.json())]);$('username').value=s.username;$('apSsid').value=s.apSsid;$('bleBroadcast').checked=s.bleBroadcastEnabled;$('friendMode').checked=s.friendModeEnabled;$('faction').value=s.enlightened?'enl':'res';$('timeFormat').value=s.use24HourTime?'24':'12';theme(s.enlightened);showTime(status);showChipTemperature(status);$('rotation').value=s.rotation;$('brightness').value=s.brightness;$('bv').textContent=s.brightness+'%';$('minW').value=s.minW;$('maxW').value=s.maxW;$('firmwareVersion').textContent='v'+s.firmwareVersion;profiles[0].ssid=s.wifi1||'';profiles[1].ssid=s.wifi2||'';$('storageSettings').textContent=bytes(z.settings);$('storageDisplay').textContent=bytes(z.display);$('storageDraw').textContent=bytes(z.draw);$('storagePeople').textContent=`${bytes(z.people)} / ${bytes(z.peopleLimit)}`;$('storageEncounters').textContent=`${bytes(z.encounters)} / ${bytes(z.encountersLimit)}`;$('storageOther').textContent=bytes(z.other);$('storageAvailable').textContent=bytes(z.available);$('storageBar').max=z.total;$('storageBar').value=z.used;$('storageTotal').textContent=`${bytes(z.used)} used of ${bytes(z.total)}`;showProfile();if(s.connectedSsid)$('message').textContent='Connected to '+s.connectedSsid;loading=false;saveState('saved','Saved')}
+['username','apSsid','apPassword','brightness','minW','maxW','rotation','timeFormat','bleBroadcast','friendMode'].forEach(id=>$(id).addEventListener('input',dirty));
+$('faction').onchange=()=>{theme($('faction').value==='enl');dirty()};
+let brightnessTimer;$('brightness').oninput=()=>{$('bv').textContent=$('brightness').value+'%';dirty();clearTimeout(brightnessTimer);brightnessTimer=setTimeout(()=>fetch('/api/brightness',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({brightness:+$('brightness').value})}),120)};
+$('wifi1').onclick=()=>{active=0;showProfile()};$('wifi2').onclick=()=>{active=1;showProfile()};
+$('clear').onclick=()=>{profiles[active]={ssid:'',password:''};showProfile();dirty()};
+$('scan').onclick=async()=>{$('networks').innerHTML='<p>Scanning...</p>';try{let n=await(await fetch('/api/wifi/scan')).json(),seen=new Set();n=n.filter(x=>x.ssid&&!seen.has(x.ssid)&&seen.add(x.ssid));$('networks').innerHTML=n.map((x,i)=>`<button class=net data-i=${i}><span>${x.ssid}</span><span>${x.rssi} dBm ${x.secure?'secure':'open'}</span></button>`).join('')||'<p>No networks found.</p>';document.querySelectorAll('.net').forEach(b=>b.onclick=()=>{let x=n[+b.dataset.i],pass='';if(x.secure){pass=prompt('Password for '+x.ssid);if(pass===null)return}profiles[active]={ssid:x.ssid,password:pass};showProfile();dirty()})}catch(e){$('networks').innerHTML='<p>Wi-Fi scan failed.</p>'}};
+$('save').onclick=async()=>{let min=+$('minW').value,max=+$('maxW').value,apPassword=$('apPassword').value,username=$('username').value;if(new TextEncoder().encode(username).length>64){saveState('failed','Save failed');$('message').textContent='Username must be at most 64 UTF-8 bytes.';return}if(min<0||max>4.5||min>max){saveState('failed','Save failed');$('message').textContent='Watt limits must satisfy 0 <= minimum <= maximum <= 4.5.';return}if(!$('apSsid').value.trim()||(apPassword&&apPassword.length<8)){saveState('failed','Save failed');$('message').textContent='Hotspot name is required and a new password must contain at least 8 characters.';return}try{let r=await fetch('/api/settings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username,apSsid:$('apSsid').value.trim(),apPassword,bleBroadcastEnabled:$('bleBroadcast').checked,friendModeEnabled:$('friendMode').checked,enlightened:$('faction').value==='enl',use24HourTime:$('timeFormat').value==='24',rotation:+$('rotation').value,minW:min,maxW:max,brightness:+$('brightness').value,wifi1:profiles[0].ssid,password1:profiles[0].password,wifi2:profiles[1].ssid,password2:profiles[1].password})});if(!r.ok)throw Error(await r.text());$('apPassword').value='';saveState('saved','Saved');$('message').textContent='Settings saved.'}catch(e){saveState('failed','Save failed');$('message').textContent=e.message||'Settings could not be saved.'}};
+$('syncTime').onclick=async()=>{try{let r=await fetch('/api/time',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({timestamp:Math.floor(Date.now()/1000)})});if(!r.ok)throw Error(await r.text());showTime(await fetch('/api/status').then(x=>x.json()));$('message').textContent='Controller UTC synchronized from browser.'}catch(e){$('message').textContent=e.message||'Time synchronization failed.'}};
+$('resetProximity').onclick=async()=>{if(!confirm('Permanently delete all known users and encounter history? Export them first if needed.'))return;let button=$('resetProximity');button.disabled=true;try{let r=await fetch('/api/proximity/reset',{method:'POST'});if(!r.ok)throw Error(await r.text());let z=await fetch('/api/storage').then(x=>x.json());$('storagePeople').textContent=`${bytes(z.people)} / ${bytes(z.peopleLimit)}`;$('storageEncounters').textContent=`${bytes(z.encounters)} / ${bytes(z.encountersLimit)}`;$('storageOther').textContent=bytes(z.other);$('storageAvailable').textContent=bytes(z.available);$('storageBar').value=z.used;$('storageTotal').textContent=`${bytes(z.used)} used of ${bytes(z.total)}`;$('message').textContent='Known users and encounter history reset.'}catch(e){$('message').textContent=e.message||'Could not reset proximity data.'}finally{button.disabled=false}};
+$('restart').onclick=async()=>{try{let r=await fetch('/api/restart',{method:'POST'});if(!r.ok)throw Error();$('message').textContent='Controller is restarting. Reconnect shortly.'}catch(e){$('message').textContent='Restart request failed.'}};
+$('firmware').onchange=()=>{$('upload').disabled=!$('firmware').files.length;$('otaMessage').textContent='';$('otaProgress').hidden=true};
+$('upload').onclick=()=>{let file=$('firmware').files[0];if(!file)return;let data=new FormData();data.append('firmware',file,file.name);let xhr=new XMLHttpRequest();$('upload').disabled=true;$('firmware').disabled=true;$('otaProgress').hidden=false;$('otaProgress').value=0;$('otaMessage').textContent='Uploading firmware... Keep this page open.';xhr.upload.onprogress=e=>{if(e.lengthComputable)$('otaProgress').value=Math.round(e.loaded/e.total*100)};xhr.onload=()=>{if(xhr.status===200){$('otaProgress').value=100;$('otaMessage').textContent='Update installed. Controller is restarting; reconnect shortly.'}else{otaDone(xhr.responseText||'Firmware update failed.')}};xhr.onerror=()=>otaDone('Connection lost before the update completed.');xhr.open('POST','/api/ota');xhr.send(data)};
+function otaDone(message){$('otaMessage').textContent=message;$('upload').disabled=false;$('firmware').disabled=false}
+if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});init();setInterval(refreshChipTemperature,5000);
+</script>
+</body>
+</html>

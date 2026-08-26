@@ -1,0 +1,26 @@
+:root { color-scheme: dark; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #071116; color: #e2fbff; font: 16px system-ui; }
+main { width: 100%; max-width: 760px; margin: auto; padding: max(10px,env(safe-area-inset-top)) max(14px,env(safe-area-inset-right)) 26px max(14px,env(safe-area-inset-left)); }
+nav, .bar { display: flex; }
+nav { gap: 8px; position: sticky; top: 0; background: #071116ee; z-index: 3; padding: 8px 0; }
+.bar { gap: 7px; flex-wrap: wrap; margin: 9px 0; }
+nav > * { flex: 1; min-width: 0; }
+.bar > * { flex: 1; min-width: 90px; }
+a, button, input, select { min-height: 44px; padding: 9px; border-radius: 9px; border: 1px solid #347080; background: #102930; color: white; font: inherit; }
+input, select { max-width: 100%; min-width: 0; }
+a, button { background: #007f91; text-align: center; text-decoration: none; font-weight: 700; }
+.card { background: #102229; border: 1px solid #24505d; border-radius: 12px; padding: 12px; margin: 12px 0; }
+h1, h2 { margin: .15em 0 .55em; }
+canvas { display: block; width: 100%; aspect-ratio: 1; background: #0c1d23; border: 1px solid #246070; border-radius: 12px; touch-action: none; }
+.tool.active { background: #c06b00; outline: 2px solid #ffb347; }
+.delete { background: #7a2730; }
+.save.dirty { background: #c06b00; }
+.save.failed { background: #c62828; }
+html.enl body { background: #071408; color: #e8ffe2; }
+html.enl nav { background: #071408ee; }
+html.enl a, html.enl button { background: #327d36; }
+html.enl button.delete { background: #7a2730; }
+html.enl input, html.enl select { background: #0a1f0e; border-color: #397a3d; }
+html.enl .card { background: #102b18; border-color: #315f35; }
+html.enl canvas { background: #0a1c0d; border-color: #397a3d; }
