@@ -4,6 +4,7 @@
 
 #include "app_state.h"
 #include "glyph_drawer.h"
+#include "sk6812_rmt.h"
 
 LedController::LedController()
     : strip_(LED_COUNT, LED_PIN_REV1, NEO_GRBW + NEO_KHZ800) {}
@@ -14,7 +15,8 @@ void LedController::begin() {
   buildRotationMaps();
   strip_.begin();
   strip_.clear();
-  strip_.show();
+  beginSk6812Rmt(pin());
+  showSk6812Rmt(strip_.getPixels(), LED_COUNT * 4U);
   Serial.printf("LED: hardware revision %u, data GPIO%u\n",
                 globalSettings.hardwareRevision, pin());
 }
@@ -156,5 +158,5 @@ void LedController::showPowerLimitedInternal(const Rgbw *pixels,
                static_cast<uint32_t>(pixel.w) * outputScale /
                    (255UL * 255UL)));
   }
-  strip_.show();
+  showSk6812Rmt(strip_.getPixels(), LED_COUNT * 4U);
 }
