@@ -2,21 +2,30 @@
 
 #include <Arduino.h>
 
-#define FIRMWARE_VERSION "0.9.2"
+#define FIRMWARE_VERSION "0.9.5"
 
 // I/O Configuration
 constexpr size_t LED_COUNT = 69;
-constexpr uint8_t LED_PIN = 2;       // WROOM-02 pad 16
+constexpr uint8_t LED_PIN_REV1 = 2;  // WROOM-02 pad 16
+constexpr uint8_t LED_PIN_REV2 = 19;  // WROOM-02 pad 14
 constexpr uint8_t BUTTON_1_PIN = 1;  // WROOM-02 pad 17, active low
 constexpr uint8_t BUTTON_2_PIN = 4;  // WROOM-02 pad 3, active low
+constexpr uint8_t I2C_SDA_PIN = 5;
+constexpr uint8_t I2C_SCL_PIN = 6;
 
-// Hardware Limit
-#define MAX_LED_POWER_MW 4500UL
+// Hardware power limits
+#define REV1_MAX_LED_POWER_MW 4500UL
+#define REV2_MAX_LED_POWER_MW 8000UL
+
+constexpr uint32_t hardwareLedLimitMw(uint8_t hardwareRevision) {
+  return hardwareRevision == 2 ? REV2_MAX_LED_POWER_MW
+                               : REV1_MAX_LED_POWER_MW;
+}
 
 // Default Configuration
 constexpr uint32_t DEFAULT_MIN_POWER_MW = 0UL;
-constexpr uint32_t DEFAULT_MAX_POWER_MW = MAX_LED_POWER_MW;
-constexpr uint8_t DEFAULT_BRIGHTNESS_PERCENT = 100;
+constexpr uint32_t DEFAULT_MAX_POWER_MW = REV1_MAX_LED_POWER_MW;
+constexpr uint8_t DEFAULT_BRIGHTNESS_PERCENT = 50;
 
 // LED Configuration
 constexpr uint32_t RGB_CHANNEL_CURRENT_UA = 8000UL;
@@ -24,6 +33,14 @@ constexpr uint32_t WHITE_CHANNEL_CURRENT_UA = 16500UL;
 constexpr uint32_t LED_SUPPLY_MV = 5000UL;
 constexpr uint8_t MAX_PAGES = 5;
 constexpr uint32_t DEFAULT_INTERVAL_MS = 2000UL;
+
+// Rev 2 board temperature protection. The hottest LED-board sensor controls
+// a linear power derating curve; an unavailable sensor produces a 0 mW cap.
+constexpr int32_t LED_THERMAL_DERATE_START_MC = 50000;
+constexpr int32_t LED_THERMAL_SHUTDOWN_MC = 70000;
+constexpr uint32_t TEMPERATURE_SAMPLE_INTERVAL_MS = 1000UL;
+constexpr uint32_t TEMPERATURE_SENSOR_STALE_MS = 5000UL;
+constexpr uint32_t TEMPERATURE_SENSOR_RESCAN_MS = 5000UL;
 
 // NTP
 constexpr uint32_t UTC_CHECKPOINT_INTERVAL_MS = 7UL * 24UL * 60UL * 60UL * 1000UL;

@@ -6,13 +6,21 @@
 #include "glyph_drawer.h"
 
 LedController::LedController()
-    : strip_(LED_COUNT, LED_PIN, NEO_GRBW + NEO_KHZ800) {}
+    : strip_(LED_COUNT, LED_PIN_REV1, NEO_GRBW + NEO_KHZ800) {}
 
 void LedController::begin() {
+  strip_.setPin(globalSettings.hardwareRevision == 2 ? LED_PIN_REV2
+                                                     : LED_PIN_REV1);
   buildRotationMaps();
   strip_.begin();
   strip_.clear();
   strip_.show();
+  Serial.printf("LED: hardware revision %u, data GPIO%u\n",
+                globalSettings.hardwareRevision, pin());
+}
+
+uint8_t LedController::pin() const {
+  return static_cast<uint8_t>(strip_.getPin());
 }
 
 void LedController::buildRotationMaps() {
@@ -69,59 +77,84 @@ void LedController::buildRotationMaps() {
 }
 
 void LedController::showPowerLimited(const Rgbw *pixels) {
-  showPowerLimitedInternal(pixels, powerLimitMw, false);
+  showPowerLimitedInternal(pixels, globalSettings.maxPowerMw, false, true);
 }
 
 void LedController::showPowerLimited(const Rgbw *pixels, uint32_t limitMw,
                                      bool allowRgbWithFullWhite) {
-  showPowerLimitedInternal(pixels, limitMw, allowRgbWithFullWhite);
+  showPowerLimitedInternal(pixels, limitMw, allowRgbWithFullWhite, false);
 }
 
 void LedController::showPowerLimitedInternal(const Rgbw *pixels,
-                                             uint32_t limitMw,
-                                             bool allowRgbWithFullWhite) {
-  // Use the brightest requested pixel as the global reference and budget as if
-  // all 69 LEDs displayed it. The limiter scale therefore does not jump when a
-  // glyph changes from, for example, three lit LEDs to nine.
-  uint64_t maxPixelCurrentUaTimes255 = 0;
+                                             uint32_t softwareLimitMw,
+                                             bool allowRgbWithFullWhite,
+                                             bool applyGlobalBrightness) {
+  const uint32_t hardwareLimitMw = min(
+      hardwareLedLimitMw(globalSettings.hardwareRevision),
+      thermalPowerLimitMw);
+  softwareLimitMw = min(softwareLimitMw,
+                        hardwareLedLimitMw(globalSettings.hardwareRevision));
+  const uint32_t limitMw = min(softwareLimitMw, hardwareLimitMw);
+  const uint16_t brightnessScale =
+      applyGlobalBrightness
+          ? static_cast<uint16_t>(globalSettings.brightnessPercent) * 255U /
+                100U
+          : 255U;
+  uint64_t requestedCurrentUaTimes255 = 0;
   for (size_t i = 0; i < LED_COUNT; ++i) {
     // Full white is emitted by the dedicated W die only. Below 255, white is
     // intentionally mixed with RGB so users can still create tinted whites.
     const bool pureWhite = pixels[i].w == 255 && !allowRgbWithFullWhite;
+    const uint16_t red =
+        static_cast<uint16_t>(pixels[i].r) * brightnessScale / 255U;
+    const uint16_t green =
+        static_cast<uint16_t>(pixels[i].g) * brightnessScale / 255U;
+    const uint16_t blue =
+        static_cast<uint16_t>(pixels[i].b) * brightnessScale / 255U;
+    const uint16_t white =
+        static_cast<uint16_t>(pixels[i].w) * brightnessScale / 255U;
     uint64_t pixelCurrentUaTimes255 =
-        static_cast<uint64_t>(pureWhite ? 0 :
-                              pixels[i].r + pixels[i].g + pixels[i].b) *
+        static_cast<uint64_t>(pureWhite ? 0 : red + green + blue) *
         RGB_CHANNEL_CURRENT_UA;
     pixelCurrentUaTimes255 +=
-        static_cast<uint64_t>(pixels[i].w) * WHITE_CHANNEL_CURRENT_UA;
-    maxPixelCurrentUaTimes255 =
-        max(maxPixelCurrentUaTimes255, pixelCurrentUaTimes255);
+        static_cast<uint64_t>(white) * WHITE_CHANNEL_CURRENT_UA;
+    requestedCurrentUaTimes255 += pixelCurrentUaTimes255;
   }
-
-  const uint64_t assumedCurrentUaTimes255 =
-      maxPixelCurrentUaTimes255 * LED_COUNT;
 
   const uint64_t maxCurrentUaTimes255 =
       (static_cast<uint64_t>(limitMw) * 1000000ULL * 255ULL) /
       LED_SUPPLY_MV;
   uint32_t limiterScale = 255;
-  if (assumedCurrentUaTimes255 > maxCurrentUaTimes255) {
+  if (requestedCurrentUaTimes255 > maxCurrentUaTimes255) {
     limiterScale = static_cast<uint32_t>(
-        (maxCurrentUaTimes255 * 255ULL) / assumedCurrentUaTimes255);
+        (maxCurrentUaTimes255 * 255ULL) / requestedCurrentUaTimes255);
   }
+  const uint64_t requestedPowerMw =
+      requestedCurrentUaTimes255 * LED_SUPPLY_MV /
+      (1000000ULL * 255ULL);
+  currentLedPowerMw = static_cast<uint32_t>(
+      requestedPowerMw * limiterScale / 255ULL);
+  ledPowerLimitState =
+      limiterScale == 255
+          ? LedPowerLimitState::NotLimited
+          : softwareLimitMw < hardwareLimitMw
+                ? LedPowerLimitState::Software
+                : LedPowerLimitState::Hardware;
   for (size_t i = 0; i < LED_COUNT; ++i) {
     const Rgbw &pixel =
         pixels[rotationMap_[globalSettings.rotationQuarterTurns][i]];
     const bool pureWhite = pixel.w == 255 && !allowRgbWithFullWhite;
+    const uint32_t outputScale = brightnessScale * limiterScale;
     strip_.setPixelColor(
         i, strip_.Color(
-               pureWhite ? 0 :
-                   (static_cast<uint16_t>(pixel.r) * limiterScale) / 255,
-               pureWhite ? 0 :
-                   (static_cast<uint16_t>(pixel.g) * limiterScale) / 255,
-               pureWhite ? 0 :
-                   (static_cast<uint16_t>(pixel.b) * limiterScale) / 255,
-               (static_cast<uint16_t>(pixel.w) * limiterScale) / 255));
+               pureWhite ? 0 : static_cast<uint32_t>(pixel.r) * outputScale /
+                                       (255UL * 255UL),
+               pureWhite ? 0 : static_cast<uint32_t>(pixel.g) * outputScale /
+                                       (255UL * 255UL),
+               pureWhite ? 0 : static_cast<uint32_t>(pixel.b) * outputScale /
+                                       (255UL * 255UL),
+               static_cast<uint32_t>(pixel.w) * outputScale /
+                   (255UL * 255UL)));
   }
   strip_.show();
 }

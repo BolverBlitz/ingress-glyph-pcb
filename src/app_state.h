@@ -4,6 +4,7 @@
 #include "rgbw.h"
 
 enum class DisplayMode : uint8_t { GlyphSequence, GlyphRandom, Draw };
+enum class LedPowerLimitState : uint8_t { NotLimited, Software, Hardware };
 
 struct DisplaySettings {
   DisplayMode mode = DisplayMode::GlyphSequence;
@@ -30,6 +31,7 @@ struct GlobalSettings {
   bool bleBroadcastEnabled = true;
   bool friendModeEnabled = false;
   bool use24HourTime = true;
+  uint8_t hardwareRevision = 1;
   uint8_t rotationQuarterTurns = 0;
   uint32_t minPowerMw = DEFAULT_MIN_POWER_MW;
   uint32_t maxPowerMw = DEFAULT_MAX_POWER_MW;
@@ -42,6 +44,9 @@ extern GlobalSettings globalSettings;
 extern Rgbw customPages[MAX_PAGES][LED_COUNT];
 extern String customPageNames[MAX_PAGES];
 extern uint32_t powerLimitMw;
+extern uint32_t thermalPowerLimitMw;
+extern uint32_t currentLedPowerMw;
+extern LedPowerLimitState ledPowerLimitState;
 extern uint32_t displayRevision;
 
 void updatePowerLimit();

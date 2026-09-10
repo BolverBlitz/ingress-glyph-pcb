@@ -2,6 +2,22 @@
 
 PlatformIO firmware for an ESP32-C3-WROOM-02-N4 driving 69 SK6812RGBW LEDs.
 
+## Hardware revisions
+
+- Rev 1 drives the LED chain from GPIO2 and has a 4.5 W hardware limit.
+- Rev 2 drives the LED chain from ESP32-C3-WROOM-02 module pad 14 (GPIO19)
+  and uses GPIO5 (SDA) / GPIO6 (SCL)
+  for two TMP117 temperature sensors. The first detected TMP117 address is the
+  center LED sensor and the second is the bottom-board sensor. Its hardware
+  limit is 8 W.
+- Select the revision under **Settings → Hardware revision**. A revision change
+  is saved and restarts the controller automatically.
+
+On Rev 2, the hotter TMP117 reading limits every LED mode. The configured power
+is available up to 50 °C, then linearly derated to 0 W at 70 °C. The LEDs remain
+off if either sensor is missing or has not produced a valid reading for five
+seconds.
+
 ## Build and flash
 
 Install Python and PlatformIO, then run these commands from the repository root:

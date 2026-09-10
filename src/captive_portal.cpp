@@ -17,6 +17,7 @@
 #include "proximity_manager.h"
 #include "proximity_store.h"
 #include "settings_store.h"
+#include "temperature_controller.h"
 #include "time_service.h"
 #include "web_ui.h"
 
@@ -299,6 +300,8 @@ void GlyphWebServer::registerRoutes() {
 
 void GlyphWebServer::sendStatus() {
   JsonDocument doc;
+  const uint32_t hardwareLimitMw =
+      hardwareLedLimitMw(globalSettings.hardwareRevision);
   doc["apSsid"] = globalSettings.apSsid;
   doc["hotspotActive"] = hotspotActive_;
   doc["apIp"] = hotspotActive_ ? WiFi.softAPIP().toString() : String();
@@ -306,14 +309,38 @@ void GlyphWebServer::sendStatus() {
   doc["ssid"] = WiFi.SSID();
   doc["staIp"] = WiFi.localIP().toString();
   doc["powerMw"] = powerLimitMw;
+  doc["hardwareLedLimitMw"] = hardwareLimitMw;
+  doc["currentLedPowerMw"] = currentLedPowerMw;
+  switch (ledPowerLimitState) {
+    case LedPowerLimitState::Software:
+      doc["powerLimitSource"] = "SW Limited";
+      break;
+    case LedPowerLimitState::Hardware:
+      doc["powerLimitSource"] = "HW Limited";
+      break;
+    default:
+      doc["powerLimitSource"] = "Not Limited";
+      break;
+  }
   doc["brightness"] = globalSettings.brightnessPercent;
   doc["username"] = globalSettings.username;
   doc["hostname"] = WiFi.getHostname();
   doc["enlightened"] = globalSettings.enlightened;
   doc["use24HourTime"] = globalSettings.use24HourTime;
   doc["rotation"] = globalSettings.rotationQuarterTurns * 90U;
+  doc["hardwareRevision"] = globalSettings.hardwareRevision;
   doc["firmwareVersion"] = FIRMWARE_VERSION;
   doc["chipTemperatureC"] = temperatureRead();
+  if (temperatureController.centerValid()) {
+    doc["centerTemperatureC"] = temperatureController.centerC();
+  } else {
+    doc["centerTemperatureC"] = nullptr;
+  }
+  if (temperatureController.bottomValid()) {
+    doc["bottomTemperatureC"] = temperatureController.bottomC();
+  } else {
+    doc["bottomTemperatureC"] = nullptr;
+  }
   doc["timeValid"] = utcTimeValid();
   doc["unixTime"] = utcNow();
   doc["ntpActive"] = ntpActive();
@@ -331,6 +358,9 @@ void GlyphWebServer::sendSettings() {
   doc["friendModeEnabled"] = globalSettings.friendModeEnabled;
   doc["enlightened"] = globalSettings.enlightened;
   doc["use24HourTime"] = globalSettings.use24HourTime;
+  doc["hardwareRevision"] = globalSettings.hardwareRevision;
+  doc["hardwareMaxW"] =
+      hardwareLedLimitMw(globalSettings.hardwareRevision) / 1000.0f;
   doc["rotation"] = globalSettings.rotationQuarterTurns * 90U;
   doc["minW"] = globalSettings.minPowerMw / 1000.0f;
   doc["maxW"] = globalSettings.maxPowerMw / 1000.0f;
@@ -764,6 +794,12 @@ void GlyphWebServer::applySettings() {
     server_.send(400, "text/plain", "Username must be at most 64 UTF-8 bytes");
     return;
   }
+  const uint8_t hardwareRevision =
+      doc["hardwareRevision"] | previous.hardwareRevision;
+  if (hardwareRevision != 1 && hardwareRevision != 2) {
+    server_.send(400, "text/plain", "Hardware revision must be 1 or 2");
+    return;
+  }
   globalSettings.username = newUsername;
   globalSettings.apSsid = newApSsid;
   if (!newApPassword.isEmpty()) globalSettings.apPassword = newApPassword;
@@ -774,6 +810,7 @@ void GlyphWebServer::applySettings() {
       doc["bleBroadcastEnabled"] | previous.bleBroadcastEnabled;
   globalSettings.friendModeEnabled =
       doc["friendModeEnabled"] | previous.friendModeEnabled;
+  globalSettings.hardwareRevision = hardwareRevision;
   if (globalSettings.enlightened != previous.enlightened) {
     applyFactionColorDefaults(globalSettings.enlightened);
   }
@@ -785,12 +822,15 @@ void GlyphWebServer::applySettings() {
     return;
   }
   globalSettings.rotationQuarterTurns = rotation / 90;
+  const uint32_t hardwareLimitMw = hardwareLedLimitMw(hardwareRevision);
   globalSettings.minPowerMw = constrain(
       static_cast<uint32_t>((doc["minW"] | 0.0f) * 1000.0f), 0UL,
-      static_cast<uint32_t>(MAX_LED_POWER_MW));
+      hardwareLimitMw);
   globalSettings.maxPowerMw = constrain(
-      static_cast<uint32_t>((doc["maxW"] | 4.5f) * 1000.0f),
-      globalSettings.minPowerMw, static_cast<uint32_t>(MAX_LED_POWER_MW));
+      static_cast<uint32_t>((doc["maxW"] |
+                             (hardwareLimitMw / 1000.0f)) *
+                            1000.0f),
+      globalSettings.minPowerMw, hardwareLimitMw);
   globalSettings.brightnessPercent = constrain(doc["brightness"] | 100, 0, 100);
 
   for (uint8_t i = 0; i < 2; ++i) {
@@ -821,6 +861,13 @@ void GlyphWebServer::applySettings() {
   proximityManager.setEnabled(globalSettings.bleBroadcastEnabled);
   proximityManager.refreshIdentity();
   ++displayRevision;
+  if (globalSettings.hardwareRevision != previous.hardwareRevision) {
+    persistUtcTime();
+    server_.send(202, "application/json",
+                 "{\"saved\":true,\"restarting\":true}");
+    restartAtMs_ = millis() + 1200;
+    return;
+  }
   server_.send(204);
 }
 

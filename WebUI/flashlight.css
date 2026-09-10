@@ -17,3 +17,8 @@ html.enl .flash-button.active { background: #718800; }
 html.enl .flash-button.emergency { background: #a31e2a; }
 html.enl .remote-emergency-alert { background: #4b0d12; border-color: #ff5656; }
 html.enl .flash-panel { background: #102b18; border-color: #397a3d; }
+@media(max-width:560px) {
+  nav { flex-wrap: nowrap !important; gap: 4px; }
+  nav > * { flex: 1 1 0; min-width: 0; padding-left: 3px; padding-right: 3px; font-size: .8rem; }
+  nav > .flash-button { flex: 0 0 44px; min-width: 44px; padding: 7px; }
+}

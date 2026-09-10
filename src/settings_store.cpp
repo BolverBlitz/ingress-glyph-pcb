@@ -45,6 +45,7 @@ void settingsToJson(JsonDocument &doc) {
   doc["friendModeEnabled"] = globalSettings.friendModeEnabled;
   doc["enlightened"] = globalSettings.enlightened;
   doc["use24HourTime"] = globalSettings.use24HourTime;
+  doc["hardwareRevision"] = globalSettings.hardwareRevision;
   doc["rotationQuarterTurns"] = globalSettings.rotationQuarterTurns;
   doc["minPowerMw"] = globalSettings.minPowerMw;
   doc["maxPowerMw"] = globalSettings.maxPowerMw;
@@ -71,11 +72,14 @@ bool jsonToSettings(JsonDocument &doc, GlobalSettings &target) {
   target.friendModeEnabled = doc["friendModeEnabled"] | false;
   target.enlightened = doc["enlightened"] | false;
   target.use24HourTime = doc["use24HourTime"] | true;
+  target.hardwareRevision = (doc["hardwareRevision"] | 1) == 2 ? 2 : 1;
   target.rotationQuarterTurns = (doc["rotationQuarterTurns"] | 0) == 2 ? 2 : 0;
+  const uint32_t hardwareLimitMw =
+      hardwareLedLimitMw(target.hardwareRevision);
   target.minPowerMw = min<uint32_t>(doc["minPowerMw"] | DEFAULT_MIN_POWER_MW,
-                                    MAX_LED_POWER_MW);
+                                    hardwareLimitMw);
   target.maxPowerMw = min<uint32_t>(doc["maxPowerMw"] | DEFAULT_MAX_POWER_MW,
-                                    MAX_LED_POWER_MW);
+                                    hardwareLimitMw);
   if (target.maxPowerMw < target.minPowerMw) return false;
   target.brightnessPercent = constrain(doc["brightnessPercent"] | 100, 0, 100);
   for (uint8_t i = 0; i < 2; ++i) {
@@ -101,6 +105,7 @@ bool sameSettings(const GlobalSettings &a, const GlobalSettings &b) {
       a.bleBroadcastEnabled != b.bleBroadcastEnabled ||
       a.friendModeEnabled != b.friendModeEnabled ||
       a.use24HourTime != b.use24HourTime ||
+      a.hardwareRevision != b.hardwareRevision ||
       a.rotationQuarterTurns != b.rotationQuarterTurns ||
       a.minPowerMw != b.minPowerMw ||
       a.maxPowerMw != b.maxPowerMw ||

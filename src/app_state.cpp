@@ -5,9 +5,15 @@ GlobalSettings globalSettings;
 Rgbw customPages[MAX_PAGES][LED_COUNT] = {};
 String customPageNames[MAX_PAGES];
 uint32_t powerLimitMw = 0;
+uint32_t thermalPowerLimitMw = REV1_MAX_LED_POWER_MW;
+uint32_t currentLedPowerMw = 0;
+LedPowerLimitState ledPowerLimitState = LedPowerLimitState::NotLimited;
 uint32_t displayRevision = 0;
 
 void updatePowerLimit() {
-  powerLimitMw =
-      (globalSettings.maxPowerMw * globalSettings.brightnessPercent) / 100U;
+  const uint32_t hardwareLimitMw =
+      hardwareLedLimitMw(globalSettings.hardwareRevision);
+  const uint32_t configuredPowerMw =
+      min(globalSettings.maxPowerMw, hardwareLimitMw);
+  powerLimitMw = min(configuredPowerMw, thermalPowerLimitMw);
 }

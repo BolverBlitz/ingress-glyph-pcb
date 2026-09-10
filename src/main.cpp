@@ -10,6 +10,7 @@
 #include "misc_controller.h"
 #include "proximity_manager.h"
 #include "settings_store.h"
+#include "temperature_controller.h"
 #include "draw_store.h"
 #include "display_store.h"
 #include "captive_portal.h"
@@ -113,6 +114,7 @@ static bool renderFriendMode() {
 void setup() {
   Serial.begin(115200);
   loadSettings();
+  temperatureController.begin();
   beginTimeService();
   loadDrawPages();
   loadDisplaySettings();
@@ -127,6 +129,7 @@ void setup() {
 }
 
 void loop() {
+  if (temperatureController.loop()) ++displayRevision;
   if (loopTimeService()) proximityManager.onTimeSynchronized();
   web.loop();
   miscController.loop();
