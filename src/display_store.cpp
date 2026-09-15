@@ -46,7 +46,7 @@ bool fromJson(JsonDocument &doc, DisplaySettings &target) {
   const uint8_t mode = doc["mode"] | 0;
   if (mode > static_cast<uint8_t>(DisplayMode::Draw)) return false;
   JsonArrayConst sequence = doc["sequence"];
-  if (sequence.size() < 1 || sequence.size() > MAX_PAGES) return false;
+  if (sequence.size() < 1 || sequence.size() > MAX_GLYPH_PAGES) return false;
   target.mode = static_cast<DisplayMode>(mode);
   target.glyphCount = sequence.size();
   for (uint8_t i = 0; i < target.glyphCount; ++i) {

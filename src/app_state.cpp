@@ -2,8 +2,8 @@
 
 DisplaySettings displaySettings;
 GlobalSettings globalSettings;
-Rgbw customPages[MAX_PAGES][LED_COUNT] = {};
-String customPageNames[MAX_PAGES];
+Rgbw customPages[MAX_DRAW_PAGES][LED_COUNT] = {};
+String customPageNames[MAX_DRAW_PAGES];
 uint32_t powerLimitMw = 0;
 uint32_t thermalPowerLimitMw = REV1_MAX_LED_POWER_MW;
 uint32_t currentLedPowerMw = 0;

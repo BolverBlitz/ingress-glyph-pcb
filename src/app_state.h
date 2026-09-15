@@ -8,7 +8,7 @@ enum class LedPowerLimitState : uint8_t { NotLimited, Software, Hardware };
 
 struct DisplaySettings {
   DisplayMode mode = DisplayMode::GlyphSequence;
-  uint16_t glyphs[MAX_PAGES] = {};
+  uint16_t glyphs[MAX_GLYPH_PAGES] = {};
   uint8_t glyphCount = 1;
   uint8_t customPageCount = 1;
   uint32_t intervalMs = DEFAULT_INTERVAL_MS;
@@ -41,8 +41,8 @@ struct GlobalSettings {
 
 extern DisplaySettings displaySettings;
 extern GlobalSettings globalSettings;
-extern Rgbw customPages[MAX_PAGES][LED_COUNT];
-extern String customPageNames[MAX_PAGES];
+extern Rgbw customPages[MAX_DRAW_PAGES][LED_COUNT];
+extern String customPageNames[MAX_DRAW_PAGES];
 extern uint32_t powerLimitMw;
 extern uint32_t thermalPowerLimitMw;
 extern uint32_t currentLedPowerMw;

@@ -645,7 +645,7 @@ void GlyphWebServer::applyDisplay(bool persist) {
     return;
   }
   JsonArrayConst sequence = doc["sequence"];
-  if (sequence.size() > MAX_PAGES ||
+  if (sequence.size() > MAX_GLYPH_PAGES ||
       (displaySettings.mode == DisplayMode::GlyphSequence &&
        sequence.size() == 0)) {
     displaySettings = previous;
@@ -683,11 +683,11 @@ void GlyphWebServer::setCustom() {
   }
   JsonArrayConst pages = doc["pages"];
   JsonArrayConst names = doc["names"];
-  const uint8_t pageCount = min<uint8_t>(MAX_PAGES, pages.size());
-  if (!pageCount) {
-    server_.send(400, "text/plain", "No pages");
+  if (pages.size() < 1 || pages.size() > MAX_DRAW_PAGES) {
+    server_.send(400, "text/plain", "Drawings need 1 to 10 pages");
     return;
   }
+  const uint8_t pageCount = pages.size();
   if (names.size() != pageCount) {
     server_.send(400, "text/plain", "Every page needs a name");
     return;
@@ -704,10 +704,10 @@ void GlyphWebServer::setCustom() {
     }
   }
 
-  Rgbw previousPages[MAX_PAGES][LED_COUNT];
+  Rgbw previousPages[MAX_DRAW_PAGES][LED_COUNT];
   memcpy(previousPages, customPages, sizeof(customPages));
-  String previousNames[MAX_PAGES];
-  for (uint8_t p = 0; p < MAX_PAGES; ++p) {
+  String previousNames[MAX_DRAW_PAGES];
+  for (uint8_t p = 0; p < MAX_DRAW_PAGES; ++p) {
     previousNames[p] = customPageNames[p];
   }
   const uint8_t previousCount = displaySettings.customPageCount;
@@ -722,7 +722,7 @@ void GlyphWebServer::setCustom() {
   }
   if (!saveDrawPages()) {
     memcpy(customPages, previousPages, sizeof(customPages));
-    for (uint8_t p = 0; p < MAX_PAGES; ++p) {
+    for (uint8_t p = 0; p < MAX_DRAW_PAGES; ++p) {
       customPageNames[p] = previousNames[p];
     }
     displaySettings.customPageCount = previousCount;

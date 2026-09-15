@@ -21,7 +21,6 @@
     byId('flashPower').disabled = state.emergency;
     byId('flashIcon').classList.toggle('active', state.flashlight);
     byId('flashIcon').classList.toggle('emergency', state.emergency);
-    byId('flashMessage').textContent = state.emergency ? 'Emergency SOS is active. Hold both buttons for 2 seconds to disable it.' : state.flashlight ? 'Flashlight overrides global brightness but remains limited by Max W.' : 'At the middle position only the neutral-white W channel is used.';
     const alert = byId('remoteEmergencyAlert');
     alert.hidden = !state.remoteEmergency;
     if (state.remoteEmergency) {

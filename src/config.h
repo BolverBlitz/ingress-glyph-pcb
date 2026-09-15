@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 
-#define FIRMWARE_VERSION "0.9.6"
+#define FIRMWARE_VERSION "0.9.7"
 
 // I/O Configuration
 constexpr size_t LED_COUNT = 69;
@@ -31,7 +31,8 @@ constexpr uint8_t DEFAULT_BRIGHTNESS_PERCENT = 50;
 constexpr uint32_t RGB_CHANNEL_CURRENT_UA = 8000UL;
 constexpr uint32_t WHITE_CHANNEL_CURRENT_UA = 16500UL;
 constexpr uint32_t LED_SUPPLY_MV = 5000UL;
-constexpr uint8_t MAX_PAGES = 5;
+constexpr uint8_t MAX_GLYPH_PAGES = 5;
+constexpr uint8_t MAX_DRAW_PAGES = 10;
 constexpr uint32_t DEFAULT_INTERVAL_MS = 2000UL;
 
 // Rev 2 board temperature protection. The hottest LED-board sensor controls
