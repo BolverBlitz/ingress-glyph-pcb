@@ -12,7 +12,7 @@ section, details { background: #102229; border: 1px solid #24505d; border-radius
 summary { display: flex; align-items: center; cursor: pointer; font-size: 1.25em; font-weight: 700; list-style: none; }
 summary::after { content: '\25BE'; margin-left: 10px; }
 details[open] summary::after { transform: rotate(180deg); }
-.version { margin-left: auto; color: #8cf5ff; font-size: .72em; white-space: nowrap; }
+.version { margin-left: auto; max-width: 70%; color: #8cf5ff; font-size: .72em; line-height: 1.25; text-align: right; }
 label { display: grid; gap: 6px; margin: 10px 0; }
 .check { grid-template-columns: auto 1fr; align-items: center; }
 .check input { min-height: 24px; width: 24px; }
@@ -27,6 +27,7 @@ label { display: grid; gap: 6px; margin: 10px 0; }
 .save.failed { background: #c62828; }
 .restart { background: #7a2730; }
 .ota { margin-top: 12px; }
+.ota > button { width: 100%; }
 .ota button:disabled { opacity: .45; }
 .ota progress, .storage progress { width: 100%; height: 18px; margin: 8px 0; accent-color: #00b6cd; }
 .storage { display: grid; grid-template-columns: 1fr auto; gap: 8px; }

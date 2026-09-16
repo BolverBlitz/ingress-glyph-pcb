@@ -5,18 +5,30 @@ PlatformIO firmware for an ESP32-C3-WROOM-02-N4 driving 69 SK6812RGBW LEDs.
 ## Hardware revisions
 
 - Rev 1 drives the LED chain from GPIO2 and has a 4.5 W hardware limit.
-- Rev 2 drives the LED chain from ESP32-C3-WROOM-02 module pad 14 (GPIO19)
-  and uses GPIO5 (SDA) / GPIO6 (SCL)
-  for two TMP117 temperature sensors. The first detected TMP117 address is the
-  center LED sensor and the second is the bottom-board sensor. Its hardware
-  limit is 8 W.
+- Rev 2 drives the LED chain from GPIO19 and uses GPIO5 (SDA) / GPIO6 (SCL)
+  for two TMP117 temperature sensors. Its hardware limit is 8 W with dimming* applied as needed.
 - Select the revision under **Settings → Hardware revision**. A revision change
   is saved and restarts the controller automatically.
 
-On Rev 2, the hotter TMP117 reading limits every LED mode. The configured power
+*On Rev 2, the hotter TMP117 reading limits every LED mode. The configured power
 is available up to 50 °C, then linearly derated to 0 W at 70 °C. The LEDs remain
 off if either sensor is missing or has not produced a valid reading for five
 seconds.
+
+## Buttons
+
+- Button 1: GPIO1, active-low with internal pull-up.
+- Button 2: GPIO4, active-low with internal pull-up.
+- Double-press Button 1: cycle Glyph Sequence, Random Glyphs, and Draw. The new
+  mode is saved after 10 seconds without further button input.
+- Hold Button 1 for 2 seconds: enter Flashlight mode.
+- In Flashlight mode, press Button 2: cycle 25%, 60%, and 100% brightness.
+- Hold Button 2 on two nearby devices for 5 seconds: add each other as friends
+  and exchange the Draw page whose name exactly matches each Agent username.
+- Hold both buttons for 10 seconds: enter Emergency mode, pulse white SOS, and
+  broadcast the Emergency message to nearby devices.
+- In Emergency mode, hold both buttons for 2 seconds: disable Emergency mode.
+
 
 ## Build and flash
 
@@ -33,21 +45,49 @@ Open the serial monitor with:
 python -m platformio device monitor --port COM6 --baud 115200
 ```
 
+At 115200 baud, the serial configuration console accepts:
+
+```text
+show
+rev 2
+wifi 1 "Network name" "Network password"
+wifi 2 "Backup network" "Network password"
+wifi-clear 1
+```
+
+Passwords are never printed by `show`. An empty password configures an open
+network. Revision and Wi-Fi changes are saved and restart the controller.
+
 The build automatically minifies `WebUI/` and regenerates the embedded
 `src/web_ui.h` header. The resulting OTA image is located at
 `.pio/build/esp32-c3-devkitm-1/firmware.bin`.
 
-## Buttons
+For an interactive build, flash, hardware-revision setup, and optional Wi-Fi
+setup, run one of the helper scripts from the repository root:
 
-- Button 1: ESP32-C3-WROOM-02 pad 17 / GPIO1, active-low with internal pull-up.
-- Button 2: ESP32-C3-WROOM-02 pad 3 / GPIO4, active-low with internal pull-up.
-- Double-press Button 1: cycle Glyph Sequence, Random Glyphs, and Draw. The new
-  mode is saved after 10 seconds without further button input.
-- Hold Button 1 for 2 seconds: enter Flashlight mode.
-- In Flashlight mode, press Button 2: cycle 25%, 60%, and 100% brightness.
-- Hold Button 2 on two nearby devices for 5 seconds: add each other as friends
-  and exchange the Draw page whose name exactly matches each Agent username.
-- Hold both buttons for 10 seconds: enter Emergency mode, pulse white SOS, and
-  broadcast the Emergency message to nearby devices. No Flashlight command is
-  triggered while both buttons are held.
-- In Emergency mode, hold both buttons for 2 seconds: disable Emergency mode.
+```powershell
+.\flash.ps1
+```
+
+```bash
+bash ./flash.sh
+```
+
+When Wi-Fi setup is requested, the script waits
+for the connection and prints the controller's assigned IP address.
+On Windows, the port prompt accepts either `COM11` or just `11`.
+
+## Releases
+
+Push a semantic-version tag matching `FIRMWARE_VERSION` in `src/config.h` to
+build and publish a GitHub release automatically. For example:
+
+```bash
+git tag v0.9.8
+git push origin v0.9.8
+```
+
+The release contains the OTA-ready firmware binary and its SHA-256 checksum.
+Once the repository is public, the Settings page checks the latest release once
+when it loads. Network and GitHub errors are ignored so hotspot mode continues
+to work normally.

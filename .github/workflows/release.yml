@@ -1,0 +1,59 @@
+name: Build firmware release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install PlatformIO
+        run: python -m pip install --disable-pip-version-check platformio
+
+      - name: Verify release version
+        shell: bash
+        run: |
+          if [[ ! "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Tag must use vMAJOR.MINOR.PATCH, for example v0.9.8." >&2
+            exit 1
+          fi
+          firmware_version="$(sed -n 's/^#define FIRMWARE_VERSION "\([^"]*\)"/\1/p' src/config.h)"
+          if [[ "v${firmware_version}" != "$GITHUB_REF_NAME" ]]; then
+            echo "Tag $GITHUB_REF_NAME does not match firmware v${firmware_version}." >&2
+            exit 1
+          fi
+
+      - name: Build firmware
+        run: python -m platformio run
+
+      - name: Package release files
+        shell: bash
+        run: |
+          mkdir -p dist
+          asset="dist/ingress-glyph-pcb-${GITHUB_REF_NAME}.bin"
+          cp .pio/build/esp32-c3-devkitm-1/firmware.bin "$asset"
+          sha256sum "$asset" > "${asset}.sha256"
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME"
+          dist/ingress-glyph-pcb-${GITHUB_REF_NAME}.bin
+          dist/ingress-glyph-pcb-${GITHUB_REF_NAME}.bin.sha256
+          --verify-tag
+          --generate-notes
+          --title "Ingress Glyph PCB $GITHUB_REF_NAME"

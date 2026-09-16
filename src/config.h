@@ -2,7 +2,7 @@
 
 #include <Arduino.h>
 
-#define FIRMWARE_VERSION "0.9.7"
+#define FIRMWARE_VERSION "0.9.8"
 
 // I/O Configuration
 constexpr size_t LED_COUNT = 69;
