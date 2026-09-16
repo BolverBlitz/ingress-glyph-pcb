@@ -1,6 +1,6 @@
 # Ingress Glyph PCB firmware
 
-PlatformIO firmware for an ESP32-C3-WROOM-02-N4 driving 69 SK6812RGBW LEDs.
+Ingress Glyph PCB firmware for controlling LED chains and managing device features.
 
 ## Hardware revisions
 
