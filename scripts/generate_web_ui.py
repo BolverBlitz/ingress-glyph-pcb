@@ -12,6 +12,7 @@ PROJECT_DIR = Path(env.subst("$PROJECT_DIR"))
 env.Append(LINKFLAGS=["-flto"])
 sys.path.insert(0, str(PROJECT_DIR / "scripts"))
 from ui_translations import translate_asset
+from web_ui_minify import minify_css, minify_html, minify_js
 WEB_DIR = PROJECT_DIR / "WebUI"
 OUTPUT = Path(env.subst("$BUILD_DIR")) / "localized_web_ui.h"
 LANGUAGE = env.GetProjectOption("custom_ui_language")
@@ -42,38 +43,16 @@ ASSETS = (
 )
 
 
-def minify_css(value):
-    value = re.sub(r"/\*.*?\*/", "", value, flags=re.S)
-    value = re.sub(r"\s+", " ", value)
-    value = re.sub(r"\s*([{}:;,>+~])\s*", r"\1", value)
-    return value.strip().replace(";}", "}")
-
-
-def minify_js(value):
-    # Conservative: remove indentation/newlines without rewriting strings.
-    return "".join(line.strip() for line in value.splitlines())
-
-
-def minify_html(value):
-    value = re.sub(r"<!--(?!\[if).*?-->", "", value, flags=re.S)
-    value = re.sub(
-        r"<script>(.*?)</script>",
-        lambda match: "<script>" + minify_js(match.group(1)) + "</script>",
-        value,
-        flags=re.S | re.I,
-    )
-    value = re.sub(r">\s+<", "><", value)
-    return value.strip()
-
-
 def minify(name, kind):
     value = translate_asset(name, (WEB_DIR / name).read_text(encoding="utf-8"), LANGUAGE, FIRMWARE_VERSION)
     if kind == "gzip_html":
         return gzip.compress(minify_html(value).encode("utf-8"), compresslevel=9, mtime=0)
     if kind == "css":
         return minify_css(value)
-    if kind == "html" or kind == "svg":
+    if kind == "html":
         return minify_html(value)
+    if kind == "svg":
+        return re.sub(r">\s+<", "><", value).strip()
     if kind == "js":
         return minify_js(value)
     if kind == "json":

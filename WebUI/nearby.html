@@ -4,7 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#071116">
-  <script>document.documentElement.classList.toggle('enl',localStorage.getItem('enlightened')==='1')</script>
+  <script>
+document.documentElement.classList.toggle('enl', localStorage.getItem('enlightened') === '1')
+</script>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg">
   <link rel="stylesheet" href="/nearby.css">
@@ -19,17 +21,106 @@
   <section><h2>Currently nearby</h2><div id="nearbyList" class="people"></div></section>
   <section><h2>Known agents</h2><label>Search by username<input id="search" type="search" placeholder="Agent name"></label><div id="results" class="people"></div></section>
 </main><script>
-const $=id=>document.getElementById(id);let use24HourTime=true;
-function theme(enl){document.documentElement.classList.toggle('enl',enl);localStorage.setItem('enlightened',enl?'1':'0')}
-const when=t=>t?new Date(t*1000).toLocaleString(undefined,{hour12:!use24HourTime}):'Time unavailable';
-function duration(s){s=Math.max(0,Number(s)||0);let d=Math.floor(s/86400),h=Math.floor(s%86400/3600),m=Math.floor(s%3600/60);return[d&&d+'d',h&&h+'h',m+'m'].filter(Boolean).join(' ')}
-function proximity(rssi){return rssi>=-55?'Very Near':rssi>=-75?'Near':'Far'}
-function card(p,current=false){let name=p.username||'Unknown agent',faction=p.faction?'agent-enl':'agent-res',emergency=current&&p.emergency?'<b class="emergency-note">Emergency</b>':'',friendButton=current?`<button class="friend-button" data-user="${p.userId}" data-friend="${p.friend?0:1}">${p.friend?'Remove friend':'Add friend'}</button>`:'';return `<article class="person ${p.friend?'friend':''} ${p.emergency?'emergency-person':''}"><div><strong class="${faction}">${p.friend?'&#9733; ':''}${escapeHtml(name)}</strong>${emergency}${friendButton}</div><span>${current?`${proximity(p.rssi)}<br><small>${p.lastReceivedAgo}s ago</small>`:`Last: ${when(p.lastSeen)}<br><small>Total: ${duration(p.totalSeconds)}</small>`}</span></article>`}
-function escapeHtml(v){let e=document.createElement('span');e.textContent=v;return e.innerHTML}
-function bindFriendButtons(){document.querySelectorAll('.friend-button').forEach(button=>button.onclick=async()=>{button.disabled=true;try{let response=await fetch('/api/friend',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({userId:+button.dataset.user,friend:button.dataset.friend==='1'})});if(!response.ok)throw Error(await response.text());await Promise.all([refreshNearby(),search()])}catch(e){$('state').textContent=e.message||'Could not update friend.';button.disabled=false}})}
-async function refreshNearby(){try{let d=await fetch('/api/nearby').then(r=>r.json());$('state').textContent=d.enabled?(d.timeValid?'Bluetooth broadcasting and scanning are active.':'Bluetooth is active; sync UTC time to record encounters.'):'Bluetooth proximity is disabled in Settings.';$('nearbyList').innerHTML=d.people.length?d.people.map(p=>card(p,true)).join(''):'<p class="muted">No agents received in the last ten minutes.</p>';bindFriendButtons()}catch(e){$('state').textContent='Could not load nearby agents.'}}
-let searchTimer;async function search(){try{let q=encodeURIComponent($('search').value);let people=await fetch('/api/people?q='+q).then(r=>r.json());$('results').innerHTML=people.length?people.map(p=>card(p)).join(''):'<p class="muted">No matching known agents.</p>'}catch(e){$('results').innerHTML='<p class="muted">Search failed.</p>'}}
-$('search').oninput=()=>{clearTimeout(searchTimer);searchTimer=setTimeout(search,180)};
-async function init(){try{let s=await fetch('/api/status').then(r=>r.json());theme(s.enlightened);use24HourTime=s.use24HourTime!==false}catch(e){}refreshNearby();search();setInterval(refreshNearby,3000)}
-init();if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});
+const $ = id => document.getElementById(id);
+let use24HourTime = true;
+
+function theme(enl) {
+  document.documentElement.classList.toggle('enl', enl);
+  localStorage.setItem('enlightened', enl ? '1' : '0')
+}
+const when = t => t ? new Date(t * 1000).toLocaleString(undefined, {
+  hour12: !use24HourTime
+}) : 'Time unavailable';
+
+function duration(s) {
+  s = Math.max(0, Number(s) || 0);
+  let d = Math.floor(s / 86400),
+    h = Math.floor(s % 86400 / 3600),
+    m = Math.floor(s % 3600 / 60);
+  return [d && d + 'd', h && h + 'h', m + 'm'].filter(Boolean).join(' ')
+}
+
+function proximity(rssi) {
+  return rssi >= -55 ? 'Very Near' : rssi >= -75 ? 'Near' : 'Far'
+}
+
+function card(p, current = false) {
+  let name = p.username || 'Unknown agent',
+    faction = p.faction ? 'agent-enl' : 'agent-res',
+    emergency = current && p.emergency ? '<b class="emergency-note">Emergency</b>' : '',
+    friendButton = current ?
+    `<button class="friend-button" data-user="${p.userId}" data-friend="${p.friend?0:1}">${p.friend?'Remove friend':'Add friend'}</button>` :
+    '';
+  return `<article class="person ${p.friend?'friend':''} ${p.emergency?'emergency-person':''}"><div><strong class="${faction}">${p.friend?'&#9733; ':''}${escapeHtml(name)}</strong>${emergency}${friendButton}</div><span>${current?`${proximity(p.rssi)}<br><small>${p.lastReceivedAgo}s ago</small>`:`Last: ${when(p.lastSeen)}<br><small>Total: ${duration(p.totalSeconds)}</small>`}</span></article>`
+}
+
+function escapeHtml(v) {
+  let e = document.createElement('span');
+  e.textContent = v;
+  return e.innerHTML
+}
+
+function bindFriendButtons() {
+  document.querySelectorAll('.friend-button').forEach(button => button.onclick = async () => {
+    button.disabled = true;
+    try {
+      let response = await fetch('/api/friend', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          userId: +button.dataset.user,
+          friend: button.dataset.friend === '1'
+        })
+      });
+      if (!response.ok) throw Error(await response.text());
+      await Promise.all([refreshNearby(), search()])
+    } catch (e) {
+      $('state').textContent = e.message || 'Could not update friend.';
+      button.disabled = false
+    }
+  })
+}
+async function refreshNearby() {
+  try {
+    let d = await fetch('/api/nearby').then(r => r.json());
+    $('state').textContent = d.enabled ? (d.timeValid ?
+        'Bluetooth broadcasting and scanning are active.' :
+        'Bluetooth is active; sync UTC time to record encounters.') :
+      'Bluetooth proximity is disabled in Settings.';
+    $('nearbyList').innerHTML = d.people.length ? d.people.map(p => card(p, true)).join('') :
+      '<p class="muted">No agents received in the last ten minutes.</p>';
+    bindFriendButtons()
+  } catch (e) {
+    $('state').textContent = 'Could not load nearby agents.'
+  }
+}
+let searchTimer;
+async function search() {
+  try {
+    let q = encodeURIComponent($('search').value);
+    let people = await fetch('/api/people?q=' + q).then(r => r.json());
+    $('results').innerHTML = people.length ? people.map(p => card(p)).join('') :
+      '<p class="muted">No matching known agents.</p>'
+  } catch (e) {
+    $('results').innerHTML = '<p class="muted">Search failed.</p>'
+  }
+}
+$('search').oninput = () => {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(search, 180)
+};
+async function init() {
+  try {
+    let s = await fetch('/api/status').then(r => r.json());
+    theme(s.enlightened);
+    use24HourTime = s.use24HourTime !== false
+  } catch (e) {}
+  refreshNearby();
+  search();
+  setInterval(refreshNearby, 3000)
+}
+init();
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
 </script></body></html>

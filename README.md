@@ -79,6 +79,18 @@ PlatformIO build directory. For example, the English OTA
 image is `.pio/build/esp32-c3-devkitm-1-en/firmware.bin`. Use `-e
 esp32-c3-devkitm-1-de` or `-e esp32-c3-devkitm-1-ja` to flash another language.
 
+Keep WebUI JavaScript readable, with indented functions and comments. The Python
+pre-build script translates the sources, minifies HTML, JavaScript and CSS, and
+embeds the result in firmware before flashing. It uses the pinned `minify-html`
+dependency from `scripts/requirements-web-ui.txt`, automatically installed into
+`.pio/web-ui-deps` on the first build if needed. This first build requires
+internet access; later builds reuse the dependency. Node.js is not needed to
+build or flash. Generated files do not overwrite the sources in `WebUI/`.
+
+Run the minification regression checks with `python -m unittest discover -s
+tests -v`. If Node.js is installed, they also check JavaScript behavior and
+syntax for all three languages; otherwise those checks are skipped.
+
 Link-time optimization reduces firmware size. A final binary-size check rejects
 images that exceed the OTA slot, including image headers and alignment padding.
 

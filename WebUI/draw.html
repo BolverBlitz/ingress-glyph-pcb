@@ -4,7 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
   <meta name="theme-color" content="#071116">
-  <script>document.documentElement.classList.toggle('enl',localStorage.getItem('enlightened')==='1')</script>
+  <script>
+document.documentElement.classList.toggle('enl', localStorage.getItem('enlightened') === '1')
+</script>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon.svg">
   <link rel="stylesheet" href="/draw.css">
@@ -31,22 +33,194 @@
   </section>
 </main>
 <script>
-const $=id=>document.getElementById(id),c=$('c'),x=c.getContext('2d'),blank=()=>Array.from({length:69},()=>[0,0,0,0]),nodeLeds=new Set([15,12,9,6,3,0,58,55,49,46,68]);let pos=[],pages=[blank()],names=['Page 1'],pi=0,down=false,erase=false;
-function theme(enlightened){document.documentElement.classList.toggle('enl',enlightened);localStorage.setItem('enlightened',enlightened?'1':'0');document.querySelector('meta[name="theme-color"]').content=enlightened?'#071408':'#071116'}
-async function init(){try{let [layout,saved,status]=await Promise.all([fetch('/api/layout').then(r=>r.json()),fetch('/api/custom').then(r=>r.json()),fetch('/api/status').then(r=>r.json())]);theme(status.enlightened);if(status.enlightened)$('color').value='#55ff33';pos=layout;pages=saved.pages?.length?saved.pages:[blank()];names=saved.names?.length===pages.length?saved.names:pages.map((_,i)=>`Page ${i+1}`);sync();draw()}catch(e){$('msg').textContent='Could not load saved draw pages.'}}
-function sync(){let p=$('page');p.replaceChildren(...names.map((name,i)=>new Option(name,i)));p.value=pi;p.onchange=()=>{pi=+p.value;draw()}}
-function mapped(){let xs=pos.map(p=>p[0]),ys=pos.map(p=>p[1]),mnx=Math.min(...xs),mxx=Math.max(...xs),mny=Math.min(...ys),mxy=Math.max(...ys),pad=52,s=Math.min((c.width-2*pad)/(mxx-mnx),(c.height-2*pad)/(mxy-mny));return pos.map(p=>[pad+(p[0]-mnx)*s,pad+(p[1]-mny)*s])}
-function draw(){x.clearRect(0,0,c.width,c.height);mapped().forEach((p,i)=>{let v=pages[pi][i];x.beginPath();x.arc(p[0],p[1],9,0,Math.PI*2);x.fillStyle=`rgb(${Math.min(255,v[0]+v[3])},${Math.min(255,v[1]+v[3])},${Math.min(255,v[2]+v[3])})`;x.fill();x.lineWidth=nodeLeds.has(i)?3:1;x.strokeStyle=nodeLeds.has(i)?'#ffb347':'#6cb9c7';x.stroke()})}
-function markDirty(){$('saveDraw').className='save dirty';$('msg').textContent='Unsaved changes.'}
-function paint(e){if(!down)return;let r=c.getBoundingClientRect(),px=(e.clientX-r.left)*c.width/r.width,py=(e.clientY-r.top)*c.height/r.height,points=mapped();if(erase){let nearest=-1,distance=22;points.forEach((p,i)=>{let d=Math.hypot(p[0]-px,p[1]-py);if(d<=distance){distance=d;nearest=i}});if(nearest>=0)pages[pi][nearest]=[0,0,0,0]}else{let h=$('color').value,v=[1,3,5].map(i=>parseInt(h.slice(i,i+2),16));v.push(+$('white').value);points.forEach((p,i)=>{if(Math.hypot(p[0]-px,p[1]-py)<=25)pages[pi][i]=v.slice()})}draw();markDirty()}
-c.onpointerdown=e=>{down=true;c.setPointerCapture(e.pointerId);paint(e)};c.onpointermove=paint;c.onpointerup=c.onpointercancel=()=>down=false;
-$('eraser').onclick=()=>{erase=!erase;$('eraser').classList.toggle('active',erase);$('eraser').setAttribute('aria-pressed',erase);$('eraser').textContent=erase?'Eraser on':'Eraser'};
-function addPage(){if(pages.length>=10){$('msg').textContent='Maximum of 10 pages.';return}pages.push(blank());names.push(`Page ${pages.length}`);pi=pages.length-1;sync();draw();markDirty()}
-function renamePage(){let name=prompt('Page name (maximum 64 UTF-8 bytes)',names[pi]);if(name===null)return;name=name.trim();if(!name||new TextEncoder().encode(name).length>64){$('msg').textContent='Page names must contain 1 to 64 bytes.';return}names[pi]=name;sync();markDirty()}
-function deletePage(){if(pages.length===1){$('msg').textContent='At least one draw page is required.';return}if(!confirm(`Delete "${names[pi]}"? This takes effect when you save.`))return;pages.splice(pi,1);names.splice(pi,1);pi=Math.min(pi,pages.length-1);sync();draw();markDirty()}
-function clearPage(){pages[pi]=blank();draw();markDirty()}
-async function send(){try{let r=await fetch('/api/custom',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({names,pages})});if(!r.ok)throw Error(await r.text());$('saveDraw').className='save';$('msg').textContent='Draw pages saved.'}catch(e){$('saveDraw').className='save failed';$('msg').textContent=e.message||'Save failed.'}}
-if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});init();
+const $ = id => document.getElementById(id),
+  c = $('c'),
+  x = c.getContext('2d'),
+  blank = () => Array.from({
+    length: 69
+  }, () => [0, 0, 0, 0]),
+  nodeLeds = new Set([15, 12, 9, 6, 3, 0, 58, 55, 49, 46, 68]);
+let pos = [],
+  pages = [blank()],
+  names = ['Page 1'],
+  pi = 0,
+  down = false,
+  erase = false;
+
+function theme(enlightened) {
+  document.documentElement.classList.toggle('enl', enlightened);
+  localStorage.setItem('enlightened', enlightened ? '1' : '0');
+  document.querySelector('meta[name="theme-color"]').content = enlightened ? '#071408' : '#071116'
+}
+async function init() {
+  try {
+    let [layout, saved, status] = await Promise.all([fetch('/api/layout').then(r => r.json()),
+      fetch('/api/custom').then(r => r.json()), fetch('/api/status').then(r => r.json())
+    ]);
+    theme(status.enlightened);
+    if (status.enlightened) $('color').value = '#55ff33';
+    pos = layout;
+    pages = saved.pages?.length ? saved.pages : [blank()];
+    names = saved.names?.length === pages.length ? saved.names : pages.map((_, i) =>
+      `Page ${i+1}`);
+    sync();
+    draw()
+  } catch (e) {
+    $('msg').textContent = 'Could not load saved draw pages.'
+  }
+}
+
+function sync() {
+  let p = $('page');
+  p.replaceChildren(...names.map((name, i) => new Option(name, i)));
+  p.value = pi;
+  p.onchange = () => {
+    pi = +p.value;
+    draw()
+  }
+}
+
+function mapped() {
+  let xs = pos.map(p => p[0]),
+    ys = pos.map(p => p[1]),
+    mnx = Math.min(...xs),
+    mxx = Math.max(...xs),
+    mny = Math.min(...ys),
+    mxy = Math.max(...ys),
+    pad = 52,
+    s = Math.min((c.width - 2 * pad) / (mxx - mnx), (c.height - 2 * pad) / (mxy - mny));
+  return pos.map(p => [pad + (p[0] - mnx) * s, pad + (p[1] - mny) * s])
+}
+
+function draw() {
+  x.clearRect(0, 0, c.width, c.height);
+  mapped().forEach((p, i) => {
+    let v = pages[pi][i];
+    x.beginPath();
+    x.arc(p[0], p[1], 9, 0, Math.PI * 2);
+    x.fillStyle =
+      `rgb(${Math.min(255,v[0]+v[3])},${Math.min(255,v[1]+v[3])},${Math.min(255,v[2]+v[3])})`;
+    x.fill();
+    x.lineWidth = nodeLeds.has(i) ? 3 : 1;
+    x.strokeStyle = nodeLeds.has(i) ? '#ffb347' : '#6cb9c7';
+    x.stroke()
+  })
+}
+
+function markDirty() {
+  $('saveDraw').className = 'save dirty';
+  $('msg').textContent = 'Unsaved changes.'
+}
+
+function paint(e) {
+  if (!down) return;
+  let r = c.getBoundingClientRect(),
+    px = (e.clientX - r.left) * c.width / r.width,
+    py = (e.clientY - r.top) * c.height / r.height,
+    points = mapped();
+  if (erase) {
+    let nearest = -1,
+      distance = 22;
+    points.forEach((p, i) => {
+      let d = Math.hypot(p[0] - px, p[1] - py);
+      if (d <= distance) {
+        distance = d;
+        nearest = i
+      }
+    });
+    if (nearest >= 0) pages[pi][nearest] = [0, 0, 0, 0]
+  } else {
+    let h = $('color').value,
+      v = [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
+    v.push(+$('white').value);
+    points.forEach((p, i) => {
+      if (Math.hypot(p[0] - px, p[1] - py) <= 25) pages[pi][i] = v.slice()
+    })
+  }
+  draw();
+  markDirty()
+}
+c.onpointerdown = e => {
+  down = true;
+  c.setPointerCapture(e.pointerId);
+  paint(e)
+};
+c.onpointermove = paint;
+c.onpointerup = c.onpointercancel = () => down = false;
+$('eraser').onclick = () => {
+  erase = !erase;
+  $('eraser').classList.toggle('active', erase);
+  $('eraser').setAttribute('aria-pressed', erase);
+  $('eraser').textContent = erase ? 'Eraser on' : 'Eraser'
+};
+
+function addPage() {
+  if (pages.length >= 10) {
+    $('msg').textContent = 'Maximum of 10 pages.';
+    return
+  }
+  pages.push(blank());
+  names.push(`Page ${pages.length}`);
+  pi = pages.length - 1;
+  sync();
+  draw();
+  markDirty()
+}
+
+function renamePage() {
+  let name = prompt('Page name (maximum 64 UTF-8 bytes)', names[pi]);
+  if (name === null) return;
+  name = name.trim();
+  if (!name || new TextEncoder().encode(name).length > 64) {
+    $('msg').textContent = 'Page names must contain 1 to 64 bytes.';
+    return
+  }
+  names[pi] = name;
+  sync();
+  markDirty()
+}
+
+function deletePage() {
+  if (pages.length === 1) {
+    $('msg').textContent = 'At least one draw page is required.';
+    return
+  }
+  if (!confirm(`Delete "${names[pi]}"? This takes effect when you save.`)) return;
+  pages.splice(pi, 1);
+  names.splice(pi, 1);
+  pi = Math.min(pi, pages.length - 1);
+  sync();
+  draw();
+  markDirty()
+}
+
+function clearPage() {
+  pages[pi] = blank();
+  draw();
+  markDirty()
+}
+async function send() {
+  try {
+    let r = await fetch('/api/custom', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        names,
+        pages
+      })
+    });
+    if (!r.ok) throw Error(await r.text());
+    $('saveDraw').className = 'save';
+    $('msg').textContent = 'Draw pages saved.'
+  } catch (e) {
+    $('saveDraw').className = 'save failed';
+    $('msg').textContent = e.message || 'Save failed.'
+  }
+}
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js').catch(() => {});
+init();
 </script>
 </body>
 </html>
