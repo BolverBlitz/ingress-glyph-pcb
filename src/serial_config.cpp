@@ -1,6 +1,7 @@
 #include "serial_config.h"
 
 #include <Arduino.h>
+#include <WiFi.h>
 #include <ctype.h>
 #include <esp_system.h>
 
@@ -17,10 +18,28 @@ size_t inputLength = 0;
 void printHelp() {
   Serial.println("Serial configuration commands:");
   Serial.println("  show");
+  Serial.println("  ip");
   Serial.println("  rev <1|2>");
   Serial.println("  wifi <1|2> \"SSID\" [\"password\"]");
   Serial.println("  wifi-clear <1|2>");
   Serial.println("Quotes allow spaces; passwords are never printed.");
+}
+
+void printIpAddress() {
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.print("Device IP: ");
+    Serial.print(WiFi.localIP());
+    Serial.println(" (Wi-Fi)");
+    return;
+  }
+  const IPAddress hotspotIp = WiFi.softAPIP();
+  if (hotspotIp != IPAddress(0, 0, 0, 0)) {
+    Serial.print("Device IP: ");
+    Serial.print(hotspotIp);
+    Serial.println(" (fallback hotspot)");
+    return;
+  }
+  Serial.println("Device IP: unavailable");
 }
 
 void printStatus() {
@@ -163,6 +182,8 @@ void handleLine(String line) {
     printHelp();
   } else if (tokens[0] == "show" && count == 1) {
     printStatus();
+  } else if (tokens[0] == "ip" && count == 1) {
+    printIpAddress();
   } else if (tokens[0] == "rev" && count == 2) {
     setRevision(tokens[1]);
   } else if (tokens[0] == "wifi" && (count == 3 || count == 4)) {

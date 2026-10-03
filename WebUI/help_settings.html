@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#071116">
+  <script>document.documentElement.classList.toggle('enl',localStorage.getItem('enlightened')==='1')</script>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg">
+  <link rel="stylesheet" href="/settings.css">
+  <link rel="stylesheet" href="/flashlight.css">
+  <script src="/flashlight.js" defer></script>
+  <title>Settings help</title>
+</head>
+<body>
+<main>
+  <nav aria-label="Primary navigation"><a href="/">Main</a><a href="/draw">Draw</a><a href="/nearby">Nearby</a><a href="/settings" aria-current="page">Settings</a></nav>
+  <h1>Settings help</h1>
+  <div class="help-tabs" role="navigation" aria-label="Help topics"><a href="/help">Buttons &amp; Features</a><a href="/help/settings" aria-current="page">Settings</a></div>
+  <p class="help-lead">What each option does, in plain language. Tap <strong>Save changes</strong> on the Settings page after editing.</p>
+  <section aria-labelledby="identityTitle">
+    <h2 id="identityTitle">Your identity</h2>
+    <div class="help-gesture"><strong>Username</strong><p>The name nearby devices see. A saved Draw page with exactly the same name becomes your personal Agent Glyph.</p></div>
+    <div class="help-gesture"><strong>Faction</strong><p>Choose Resistance or Enlightened. This changes the app theme and the faction shown to nearby devices.</p></div>
+    <div class="help-gesture"><strong>Time format</strong><p>Choose 12-hour or 24-hour times in the web app. It does not change the controller's clock.</p></div>
+  </section>
+  <section aria-labelledby="displayTitle">
+    <h2 id="displayTitle">Board &amp; display</h2>
+    <div class="help-gesture"><strong>Hardware revision</strong><p>Choose the revision of your board. Rev 1 uses a 4.5 W LED safety cap. Rev 2 uses an 8 W cap and two board-temperature sensors. Changing this setting saves it and restarts the controller.</p></div>
+    <div class="help-gesture"><strong>LED display rotation</strong><p>Choose 0&deg; or 180&deg; so the LEDs look upright for the way your board is mounted. This rotates the output; it does not change your saved drawings.</p></div>
+    <div class="help-gesture"><strong>Brightness</strong><p>Adjusts the normal glyph and Draw display. Flashlight brightness has its own control.</p></div>
+  </section>
+  <section aria-labelledby="nearbyTitle">
+    <h2 id="nearbyTitle">Bluetooth &amp; friends</h2>
+    <div class="help-gesture"><strong>Bluetooth proximity broadcasting</strong><p>Lets this device announce itself and find nearby devices. Leave it on for the Nearby page, friend pairing, and local emergency alerts.</p></div>
+    <div class="help-gesture"><strong>Friend Mode</strong><p>When a saved friend is nearby and their Agent Glyph is available, show friends' drawings on the LEDs instead of the normal display. The drawings cycle while those friends are in range.</p></div>
+  </section>
+  <section aria-labelledby="powerTitle">
+    <h2 id="powerTitle">LED power limits</h2>
+    <div class="help-gesture"><strong>Max LED power</strong><p>A ceiling for LED power, not a target brightness. Dim patterns can use less. Rev 1 can be set up to 4.5 W; Rev 2 up to 8 W.</p></div>
+    <div class="help-gesture"><strong>Minimum watts</strong><p>Only prevents Max LED power from being set lower than this value. It does not force the LEDs to use that much power. Leave it at 0 W unless you need that setting constraint.</p></div>
+    <p class="help-note">On Rev 2, the hotter board-temperature sensor reduces LED power above 50 &deg;C and turns LEDs off at 70 &deg;C. The LEDs also turn off if a sensor reading is unavailable. These safety limits always take priority over your Max LED power setting.</p>
+  </section>
+  <section aria-labelledby="wifiTitle">
+    <h2 id="wifiTitle">Wi-Fi &amp; hotspot</h2>
+    <div class="help-gesture"><strong>Wi-Fi profiles</strong><p>Save up to two networks. The controller tries WiFi 1 first, then WiFi 2. Use <strong>Scan nearby Wi-Fi</strong> to choose a network. Restart after saving a profile change to use it.</p></div>
+    <div class="help-gesture"><strong>Fallback hotspot</strong><p>If neither saved network connects, the controller starts its own Wi-Fi hotspot. Connect to it and open <strong>192.168.4.1</strong> in your browser. Set its name and password here; leave the password box empty to keep the existing password.</p></div>
+  </section>
+  <section aria-labelledby="maintenanceTitle">
+    <h2 id="maintenanceTitle">Status &amp; maintenance</h2>
+    <div class="help-gesture"><strong>Device status</strong><p>Shows live temperatures and estimated LED power. Hardware LED limit is the fixed ceiling for your board revision; Rev 2 temperature protection may lower the actual limit.</p></div>
+    <div class="help-gesture"><strong>UTC time</strong><p>The clock syncs from the internet when Wi-Fi is connected. If it has not synced, use <strong>Sync browser time</strong> so encounter times can be recorded.</p></div>
+    <div class="help-gesture"><strong>Storage</strong><p>Shows saved data and free space. You can export people and encounters before resetting that history.</p></div>
+    <div class="help-gesture"><strong>Firmware update</strong><p>Install a compatible firmware file here. Saved settings and Draw pages are kept; the controller restarts when the update finishes.</p></div>
+  </section>
+  <a class="help-back" href="/settings">Back to Settings</a>
+</main>
+<script>if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});</script>
+</body>
+</html>

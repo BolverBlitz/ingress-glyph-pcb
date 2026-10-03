@@ -21,7 +21,7 @@ seconds.
 - Button 2: GPIO4, active-low with internal pull-up.
 - Double-press Button 1: cycle Glyph Sequence, Random Glyphs, and Draw. The new
   mode is saved after 10 seconds without further button input.
-- Hold Button 1 for 2 seconds: enter Flashlight mode.
+- Hold Button 1 for 2 seconds: toggle Flashlight mode on or off.
 - In Flashlight mode, press Button 2: cycle 25%, 60%, and 100% brightness.
 - Hold Button 2 on two nearby devices for 5 seconds: add each other as friends
   and exchange the Draw page whose name exactly matches each Agent username.
@@ -36,7 +36,7 @@ Install Python and PlatformIO, then run these commands from the repository root:
 
 ```powershell
 python -m platformio run
-python -m platformio run --target upload --upload-port COM6
+python -m platformio run -e esp32-c3-devkitm-1-en --target upload --upload-port COM11
 ```
 
 Open the serial monitor with:
@@ -49,6 +49,7 @@ At 115200 baud, the serial configuration console accepts:
 
 ```text
 show
+ip
 rev 2
 wifi 1 "Network name" "Network password"
 wifi 2 "Backup network" "Network password"
@@ -58,9 +59,26 @@ wifi-clear 1
 Passwords are never printed by `show`. An empty password configures an open
 network. Revision and Wi-Fi changes are saved and restart the controller.
 
-The build automatically minifies `WebUI/` and regenerates the embedded
-`src/web_ui.h` header. The resulting OTA image is located at
-`.pio/build/esp32-c3-devkitm-1/firmware.bin`.
+To display the IP addresses of all controllers connected over USB serial, run:
+
+```powershell
+python scripts/find_device_ips.py
+```
+
+Specific ports can be supplied when other serial equipment is connected:
+
+```powershell
+python scripts/find_device_ips.py COM11 COM12
+```
+
+The default build produces three independent firmware images: English (`en`),
+German (`de`), and Japanese (`ja`). Each image contains only its own UI language;
+language is selected when flashing, not in Settings. The build automatically
+translates and minifies `WebUI/` into a `localized_web_ui.h` header inside each
+PlatformIO build directory. For example, the English OTA
+image is `.pio/build/esp32-c3-devkitm-1-en/firmware.bin`. Use `-e
+esp32-c3-devkitm-1-de` or `-e esp32-c3-devkitm-1-ja` to flash another language.
+
 Link-time optimization reduces firmware size. A final binary-size check rejects
 images that exceed the OTA slot, including image headers and alignment padding.
 
@@ -117,7 +135,9 @@ git tag v0.9.8
 git push origin v0.9.8
 ```
 
-The release contains the OTA-ready firmware binary and its SHA-256 checksum.
+The release contains an OTA-ready binary and SHA-256 checksum for each language,
+named `ingress-glyph-pcb-vX.Y.Z-en.bin`, `-de.bin`, and `-ja.bin`. The Settings
+page offers the download matching the language currently installed.
 Once the repository is public, the Settings page checks the latest release once
 when it loads. Network and GitHub errors are ignored so hotspot mode continues
 to work normally.

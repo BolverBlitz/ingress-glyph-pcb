@@ -1,5 +1,5 @@
-const CACHE = 'ingress-glyph-v32';
-const ASSETS = ['/', '/draw', '/nearby', '/settings', '/index.css', '/draw.css', '/nearby.css', '/settings.css', '/flashlight.css', '/flashlight.js', '/manifest.webmanifest', '/icon.svg'];
+const CACHE = 'ingress-glyph-v33';
+const ASSETS = ['/', '/draw', '/nearby', '/settings', '/help', '/help/settings', '/index.css', '/draw.css', '/nearby.css', '/settings.css', '/flashlight.css', '/flashlight.js', '/manifest.webmanifest', '/icon.svg'];
 self.addEventListener('install', event => event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS))));
 self.addEventListener('activate', event => event.waitUntil(caches.keys().then(keys => Promise.all(keys.filter(key => key !== CACHE).map(key => caches.delete(key))))));
 self.addEventListener('fetch', event => {

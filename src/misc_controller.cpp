@@ -456,7 +456,7 @@ void MiscController::handleButtons(uint32_t now) {
     const uint32_t heldMs = now - button1_.pressedAtMs;
     if (!button1_.longHandled && heldMs >= BUTTON_LONG_PRESS_MS) {
       button1_.longHandled = true;
-      setFlashlight(true);
+      setFlashlight(mode_ != MiscMode::Flashlight);
     }
   }
 

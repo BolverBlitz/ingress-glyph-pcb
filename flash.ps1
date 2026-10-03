@@ -2,6 +2,7 @@
 param(
     [string]$Port,
     [int]$Revision,
+    [ValidateSet('en', 'de', 'ja')][string]$Language,
     [switch]$SkipWifi
 )
 
@@ -62,6 +63,15 @@ while ($Revision -ne 1 -and $Revision -ne 2) {
     Write-Host 'Please enter 1 or 2.' -ForegroundColor Yellow
 }
 
+if ([string]::IsNullOrWhiteSpace($Language)) {
+    do {
+        $Language = (Read-Host 'UI language: en (English), de (Deutsch), ja (日本語) [en]').Trim().ToLowerInvariant()
+        if (-not $Language) { $Language = 'en' }
+    } while ($Language -notin @('en', 'de', 'ja'))
+}
+$Language = $Language.ToLowerInvariant()
+$buildEnvironment = "esp32-c3-devkitm-1-$Language"
+
 $ssid = $null
 $wifiPassword = ''
 if (-not $SkipWifi) {
@@ -75,11 +85,11 @@ if (-not $SkipWifi) {
 
 Push-Location $projectDirectory
 try {
-    Write-Host 'Building firmware...' -ForegroundColor Cyan
-    Invoke-Checked $python @('-m', 'platformio', 'run')
+    Write-Host "Building $Language firmware..." -ForegroundColor Cyan
+    Invoke-Checked $python @('-m', 'platformio', 'run', '-e', $buildEnvironment)
 
     Write-Host "Flashing $Port..." -ForegroundColor Cyan
-    Invoke-Checked $python @('-m', 'platformio', 'run', '--target', 'upload', '--upload-port', $Port)
+    Invoke-Checked $python @('-m', 'platformio', 'run', '-e', $buildEnvironment, '--target', 'upload', '--upload-port', $Port)
 
     $configureArguments = @(
         'scripts/configure_serial.py',

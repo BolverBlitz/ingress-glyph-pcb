@@ -37,23 +37,28 @@ jobs:
           fi
 
       - name: Build firmware
-        run: python -m platformio run
+        shell: bash
+        run: |
+          for language in en de ja; do
+            python -m platformio run -e "esp32-c3-devkitm-1-${language}"
+          done
 
       - name: Package release files
         shell: bash
         run: |
           mkdir -p dist
-          asset="dist/ingress-glyph-pcb-${GITHUB_REF_NAME}.bin"
-          cp .pio/build/esp32-c3-devkitm-1/firmware.bin "$asset"
-          sha256sum "$asset" > "${asset}.sha256"
+          for language in en de ja; do
+            asset="ingress-glyph-pcb-${GITHUB_REF_NAME}-${language}.bin"
+            cp ".pio/build/esp32-c3-devkitm-1-${language}/firmware.bin" "dist/$asset"
+            (cd dist && sha256sum "$asset" > "${asset}.sha256")
+          done
 
       - name: Create GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
-        run: >-
-          gh release create "$GITHUB_REF_NAME"
-          dist/ingress-glyph-pcb-${GITHUB_REF_NAME}.bin
-          dist/ingress-glyph-pcb-${GITHUB_REF_NAME}.bin.sha256
-          --verify-tag
-          --generate-notes
-          --title "Ingress Glyph PCB $GITHUB_REF_NAME"
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --verify-tag \
+            --generate-notes \
+            --title "Ingress Glyph PCB $GITHUB_REF_NAME"

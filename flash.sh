@@ -20,6 +20,16 @@ for candidate in /dev/ttyUSB* /dev/ttyACM* /dev/cu.usbserial* /dev/cu.SLAB_USBto
     break
   fi
 done
+
+language=""
+while [[ "$language" != "en" && "$language" != "de" && "$language" != "ja" ]]; do
+  read -r -p "UI language: en (English), de (Deutsch), ja (Japanese) [en]: " language
+  language="${language:-en}"
+  if [[ "$language" != "en" && "$language" != "de" && "$language" != "ja" ]]; then
+    echo "Please enter en, de, or ja."
+  fi
+done
+build_environment="esp32-c3-devkitm-1-$language"
 default_port="${default_port:-/dev/ttyUSB0}"
 
 port="${1:-}"
@@ -44,11 +54,11 @@ if [[ -n "$wifi_ssid" ]]; then
 fi
 trap 'unset wifi_password INGRESS_WIFI_PASSWORD' EXIT
 
-echo "Building firmware..."
-"$python_cmd" -m platformio run
+echo "Building $language firmware..."
+"$python_cmd" -m platformio run -e "$build_environment"
 
 echo "Flashing $port..."
-"$python_cmd" -m platformio run --target upload --upload-port "$port"
+"$python_cmd" -m platformio run -e "$build_environment" --target upload --upload-port "$port"
 
 configure_args=(
   scripts/configure_serial.py

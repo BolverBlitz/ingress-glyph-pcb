@@ -34,6 +34,21 @@ label { display: grid; gap: 6px; margin: 10px 0; }
 .storage strong { text-align: right; }
 .storage-actions { display: grid; gap: 8px; margin-top: 12px; }
 .danger { background: #a52832; }
+.page-heading { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.page-heading h1 { margin: 12px 0; }
+.help-shortcut { flex: 0 0 auto; padding: 9px 12px; font-size: .9rem; white-space: nowrap; }
+.help-tabs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0 0 16px; }
+.help-tabs a { display: grid; place-items: center; padding: 8px; font-size: .9rem; line-height: 1.25; }
+.help-tabs a[aria-current="page"] { outline: 2px solid #8cf5ff; }
+.help-lead { margin: 0 0 18px; line-height: 1.5; }
+.help-gesture { padding: 12px 0; border-top: 1px solid #347080; }
+.help-gesture > strong { display: block; color: #8cf5ff; }
+.help-gesture p { margin: 6px 0 0; line-height: 1.5; }
+.help-steps { padding-left: 24px; line-height: 1.5; }
+.help-steps li { padding: 4px 0; }
+.help-note { padding: 12px; border-radius: 10px; background: #0a1a20; line-height: 1.5; }
+.help-back { display: block; margin: 18px 0; }
+section p a, section li a { display: inline; min-height: 0; padding: 0; border: 0; background: none; color: #8cf5ff; text-decoration: underline; }
 html.enl body { background: #071408; color: #e8ffe2; }
 html.enl nav { background: #071408ee; }
 html.enl a, html.enl button { background: #327d36; }
@@ -45,4 +60,8 @@ html.enl .ota progress, html.enl .storage progress { accent-color: #55c93c; }
 html.enl .save.saved { background: #238636; }
 html.enl .restart { background: #7a2730; }
 html.enl .danger { background: #a52832; }
+html.enl .help-gesture { border-color: #397a3d; }
+html.enl .help-gesture > strong, html.enl section p a, html.enl section li a { color: #9cff78; }
+html.enl .help-note { background: #0a1f0e; }
+html.enl .help-tabs a[aria-current="page"] { outline-color: #9cff78; }
 @media(max-width:560px) { nav { flex-wrap: wrap; } nav > * { flex-basis: 21%; } .grid { grid-template-columns: 1fr; } }

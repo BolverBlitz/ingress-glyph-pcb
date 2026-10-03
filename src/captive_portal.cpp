@@ -19,7 +19,7 @@
 #include "settings_store.h"
 #include "temperature_controller.h"
 #include "time_service.h"
-#include "web_ui.h"
+#include "localized_web_ui.h"
 #include "effect_settings_json.h"
 
 static Rgbw jsonColor(JsonArrayConst a, const Rgbw &fallback) {
@@ -237,16 +237,42 @@ void GlyphWebServer::stopHotspot() {
 
 void GlyphWebServer::registerRoutes() {
   // Static resources
-  server_.on("/", HTTP_GET, [this] { server_.send_P(200, "text/html", MAIN_PAGE); });
-  server_.on("/draw", HTTP_GET, [this] { server_.send_P(200, "text/html", DRAW_PAGE); });
-  server_.on("/settings", HTTP_GET, [this] { server_.send_P(200, "text/html", SETTINGS_PAGE); });
-  server_.on("/nearby", HTTP_GET, [this] { server_.send_P(200, "text/html", NEARBY_PAGE); });
+  server_.on("/", HTTP_GET, [this] {
+    server_.sendHeader("Content-Encoding", "gzip");
+    server_.send_P(200, "text/html", reinterpret_cast<const char *>(MAIN_PAGE_GZIP), sizeof(MAIN_PAGE_GZIP));
+  });
+  server_.on("/draw", HTTP_GET, [this] {
+    server_.sendHeader("Content-Encoding", "gzip");
+    server_.send_P(200, "text/html", reinterpret_cast<const char *>(DRAW_PAGE_GZIP), sizeof(DRAW_PAGE_GZIP));
+  });
+  server_.on("/settings", HTTP_GET, [this] {
+    server_.sendHeader("Content-Encoding", "gzip");
+    server_.send_P(200, "text/html",
+                   reinterpret_cast<const char *>(SETTINGS_PAGE_GZIP),
+                   sizeof(SETTINGS_PAGE_GZIP));
+  });
+  server_.on("/help", HTTP_GET, [this] {
+    server_.sendHeader("Content-Encoding", "gzip");
+    server_.send_P(200, "text/html",
+                   reinterpret_cast<const char *>(HELP_BUTTONS_PAGE_GZIP),
+                   sizeof(HELP_BUTTONS_PAGE_GZIP));
+  });
+  server_.on("/help/settings", HTTP_GET, [this] {
+    server_.sendHeader("Content-Encoding", "gzip");
+    server_.send_P(200, "text/html",
+                   reinterpret_cast<const char *>(HELP_SETTINGS_PAGE_GZIP),
+                   sizeof(HELP_SETTINGS_PAGE_GZIP));
+  });
+  server_.on("/nearby", HTTP_GET, [this] {
+    server_.sendHeader("Content-Encoding", "gzip");
+    server_.send_P(200, "text/html", reinterpret_cast<const char *>(NEARBY_PAGE_GZIP), sizeof(NEARBY_PAGE_GZIP));
+  });
   server_.on("/index.css", HTTP_GET, [this] { server_.send_P(200, "text/css", MAIN_CSS); });
   server_.on("/draw.css", HTTP_GET, [this] { server_.send_P(200, "text/css", DRAW_CSS); });
   server_.on("/settings.css", HTTP_GET, [this] { server_.send_P(200, "text/css", SETTINGS_CSS); });
   server_.on("/nearby.css", HTTP_GET, [this] { server_.send_P(200, "text/css", NEARBY_CSS); });
   server_.on("/flashlight.css", HTTP_GET, [this] { server_.send_P(200, "text/css", FLASHLIGHT_CSS); });
-  server_.on("/flashlight.js", HTTP_GET, [this] { server_.send_P(200, "application/javascript", FLASHLIGHT_JS); });
+  server_.on("/flashlight.js", HTTP_GET, [this] { server_.send_P(200, "application/javascript; charset=utf-8", FLASHLIGHT_JS); });
   // WPA support
   server_.on("/manifest.webmanifest", HTTP_GET, [this] { server_.send_P(200, "application/manifest+json", PWA_MANIFEST); });
   server_.on("/sw.js", HTTP_GET, [this] { server_.send_P(200, "application/javascript", SERVICE_WORKER); });
@@ -329,6 +355,7 @@ void GlyphWebServer::sendStatus() {
   doc["rotation"] = globalSettings.rotationQuarterTurns * 90U;
   doc["hardwareRevision"] = globalSettings.hardwareRevision;
   doc["firmwareVersion"] = FIRMWARE_VERSION;
+  doc["uiLanguage"] = UI_LANGUAGE;
   doc["chipTemperatureC"] = temperatureRead();
   if (temperatureController.centerValid()) {
     doc["centerTemperatureC"] = temperatureController.centerC();
@@ -365,6 +392,7 @@ void GlyphWebServer::sendSettings() {
   doc["maxW"] = globalSettings.maxPowerMw / 1000.0f;
   doc["brightness"] = globalSettings.brightnessPercent;
   doc["firmwareVersion"] = FIRMWARE_VERSION;
+  doc["uiLanguage"] = UI_LANGUAGE;
   doc["wifi1"] = globalSettings.wifi[0].ssid;
   doc["wifi2"] = globalSettings.wifi[1].ssid;
   doc["connectedSsid"] = WiFi.status() == WL_CONNECTED ? WiFi.SSID() : String();

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#071116">
+  <script>document.documentElement.classList.toggle('enl',localStorage.getItem('enlightened')==='1')</script>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon.svg">
+  <link rel="stylesheet" href="/settings.css">
+  <link rel="stylesheet" href="/flashlight.css">
+  <script src="/flashlight.js" defer></script>
+  <title>Buttons and Features help</title>
+</head>
+<body>
+<main>
+  <nav aria-label="Primary navigation"><a href="/">Main</a><a href="/draw">Draw</a><a href="/nearby">Nearby</a><a href="/settings" aria-current="page">Settings</a></nav>
+  <h1>Buttons &amp; Features</h1>
+  <div class="help-tabs" role="navigation" aria-label="Help topics"><a href="/help" aria-current="page">Buttons &amp; Features</a><a href="/help/settings">Settings</a></div>
+  <p class="help-lead">A quick guide to the two buttons on your device and your personal drawing.</p>
+  <section aria-labelledby="modeTitle">
+    <h2 id="modeTitle">Mode control</h2>
+    <div class="help-gesture"><strong>Button 1 · press twice quickly</strong><p>Switch between your chosen glyph sequence, random glyphs, and your Draw pages. The new display mode is saved after 10 seconds without button presses.</p></div>
+  </section>
+  <section aria-labelledby="flashlightTitle">
+    <h2 id="flashlightTitle">Flashlight</h2>
+    <div class="help-gesture"><strong>Button 1 · hold 2 seconds</strong><p>Turn on the flashlight. Hold Button 1 for 2 seconds again to turn it off and return to your display.</p></div>
+    <div class="help-gesture"><strong>Button 2 · press while flashlight is on</strong><p>Switch flashlight brightness between 25%, 60%, and 100%.</p></div>
+  </section>
+  <section aria-labelledby="friendTitle">
+    <h2 id="friendTitle">Add a friend</h2>
+    <div class="help-gesture"><strong>Button 2 · hold on both devices</strong><p>Bring the devices close together and hold Button 2 on each for at least 5 seconds. They pair as friends and exchange their personal drawings when available.</p></div>
+    <p class="help-note">Bluetooth proximity must be enabled on both devices. You can also manage friends on the <a href="/nearby">Nearby page</a>.</p>
+  </section>
+  <section aria-labelledby="emergencyTitle">
+    <h2 id="emergencyTitle">Emergency signal</h2>
+    <div class="help-gesture"><strong>Both buttons · hold 10 seconds</strong><p>Start a flashing white SOS signal and alert nearby devices.</p></div>
+    <div class="help-gesture"><strong>Both buttons · hold 2 seconds again</strong><p>Stop the SOS signal.</p></div>
+    <p class="help-note">This is a local signal. It does not call emergency services.</p>
+  </section>
+  <section aria-labelledby="identityTitle">
+    <h2 id="identityTitle">Your personal Agent Glyph</h2>
+    <p>One Draw page can act like your profile picture when devices exchange drawings.</p>
+    <ol class="help-steps">
+      <li>Set your <strong>Username</strong> on the <a href="/settings">Settings page</a> and save it.</li>
+      <li>On the <a href="/draw">Draw page</a>, add or rename a page to <strong>exactly the same username</strong>.</li>
+      <li>Draw your design, then tap <strong>Save</strong> on the Draw page.</li>
+    </ol>
+    <p class="help-note">Capital letters and spaces must match. For example, username <strong>Alex</strong> needs a Draw page named <strong>Alex</strong>, not <strong>alex</strong>. Without a matching saved page, there is no personal drawing to share. Friends can see it during pairing and in Friend Mode.</p>
+  </section>
+  <a class="help-back" href="/settings">Back to Settings</a>
+</main>
+<script>if('serviceWorker'in navigator)navigator.serviceWorker.register('/sw.js').catch(()=>{});</script>
+</body>
+</html>
