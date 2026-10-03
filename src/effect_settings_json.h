@@ -11,6 +11,8 @@ inline const char *effectName(DisplayEffect e) {
 
 inline const char *fadeDirectionName(FadeDirection d) {
   switch (d) {
+    case FadeDirection::Global:
+      return "global";
     case FadeDirection::CenterInward:
       return "center-inward";
     case FadeDirection::Down:
@@ -61,7 +63,9 @@ inline bool effectSettingsFromJson(JsonObjectConst in, EffectSettings &out) {
   } else {
     return false;
   }
-  if (!strcmp(direction, "center-outward")) {
+  if (!strcmp(direction, "global")) {
+    out.direction = FadeDirection::Global;
+  } else if (!strcmp(direction, "center-outward")) {
     out.direction = FadeDirection::CenterOutward;
   } else if (!strcmp(direction, "center-inward")) {
     out.direction = FadeDirection::CenterInward;

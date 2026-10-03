@@ -94,13 +94,14 @@ On Windows, the port prompt accepts either `COM11` or just `11`.
 
 The Main page's Effects section is available in Glyph Sequence, Random Glyphs,
 and Draw modes. Choose Off or Fade. Fade also applies to friend glyph playback
-when enabled, with six directions and three transition types:
+when enabled, with six moving directions, a Global fade, and three transition types:
 
 - Quickfade: each LED reaches black before fading into the next frame, while
   outgoing and incoming waves overlap across the display.
 - Slowfade: the entire display reaches black before the incoming wave starts.
 - Mix: directly blend the old and new frames without inserting a black step.
 
+Global fades all LEDs together without a moving wave.
 Fade duration (100–60000 ms) covers the entire transition. The switch interval
 is the hold time after the transition finishes. Effects support live preview and
 are stored with the display settings when saved. Existing settings default to

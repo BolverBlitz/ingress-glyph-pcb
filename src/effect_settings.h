@@ -4,7 +4,7 @@
 
 enum class DisplayEffect : uint8_t { None, Fade };
 enum class FadeDirection : uint8_t {
-  CenterOutward, CenterInward, Down, Up, Left, Right
+  CenterOutward, CenterInward, Down, Up, Left, Right, Global
 };
 enum class FadeType : uint8_t { Quickfade, Slowfade, Mix };
 

@@ -81,6 +81,10 @@ bool FrameTransition::setTarget(const Rgbw *target,
 }
 
 void FrameTransition::buildPhases() {
+  if (settings_.direction == FadeDirection::Global) {
+    memset(phase_, 0, sizeof(phase_));
+    return;
+  }
   int16_t minX = LED_POSITIONS[0].x, maxX = minX;
   int16_t minY = LED_POSITIONS[0].y, maxY = minY;
   for (const LedPoint &point : LED_POSITIONS) {
@@ -115,6 +119,7 @@ void FrameTransition::buildPhases() {
       case FadeDirection::Up: position = -rotatedY; break;
       case FadeDirection::Left: position = -rotatedX; break;
       case FadeDirection::Right: position = rotatedX; break;
+      case FadeDirection::Global: break;  // Handled before geometry calculation.
     }
     positions[i] = position;
     if (!i) first = last = position;
@@ -143,16 +148,18 @@ void FrameTransition::advance(uint32_t now) {
     return;
   }
   bool emittedDarkStep = false;
+  const bool global = settings_.direction == FadeDirection::Global;
   for (size_t i = 0; i < LED_COUNT; ++i) {
     uint32_t oldWeight = 0, newWeight = 0;
     const uint32_t delay = phase_[i] * (FULL / 2) / 256;
     if (settings_.type == FadeType::Mix) {
-      const uint32_t window = FULL / 3;
+      const uint32_t window = global ? FULL : FULL / 3;
       newWeight = ramp(progress, phase_[i] * (FULL - window) / 256, window);
       oldWeight = FULL - newWeight;
     } else if (settings_.type == FadeType::Quickfade) {
-      oldWeight = FULL - ramp(progress, delay, FULL / 4);
-      if (progress >= delay + FULL / 4 && !darkShown_[i]) {
+      const uint32_t fadeLength = global ? FULL / 2 : FULL / 4;
+      oldWeight = FULL - ramp(progress, delay, fadeLength);
+      if (progress >= delay + fadeLength && !darkShown_[i]) {
         darkShown_[i] = true;
         emittedDarkStep = true;
         frame_[i] = {};
@@ -160,12 +167,13 @@ void FrameTransition::advance(uint32_t now) {
       }
       // Short dark gap between local fade-out and fade-in; waves overlap.
       constexpr uint32_t GAP = FULL / 64;
-      newWeight = ramp(progress, delay + FULL / 4 + GAP, FULL / 4 - GAP);
+      newWeight = ramp(progress, delay + fadeLength + GAP, fadeLength - GAP);
     } else {
       const uint32_t halfDelay = delay / 2;
-      oldWeight = FULL - ramp(progress, halfDelay, FULL / 4);
+      const uint32_t fadeLength = global ? FULL / 2 : FULL / 4;
+      oldWeight = FULL - ramp(progress, halfDelay, fadeLength);
       newWeight = blankShown_
-                      ? ramp(progress, FULL / 2 + halfDelay, FULL / 4)
+                      ? ramp(progress, FULL / 2 + halfDelay, fadeLength)
                       : 0;
     }
     frame_[i] = blend(from_[i], target_[i], oldWeight, newWeight);
