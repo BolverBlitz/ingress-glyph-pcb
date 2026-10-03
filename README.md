@@ -61,6 +61,19 @@ network. Revision and Wi-Fi changes are saved and restart the controller.
 The build automatically minifies `WebUI/` and regenerates the embedded
 `src/web_ui.h` header. The resulting OTA image is located at
 `.pio/build/esp32-c3-devkitm-1/firmware.bin`.
+Link-time optimization reduces firmware size. A final binary-size check rejects
+images that exceed the OTA slot, including image headers and alignment padding.
+
+The source build disables C++ exceptions and unwind-table generation because
+the application and its source dependencies use explicit error returns. Unwind
+tables in the precompiled ESP-IDF/C++ libraries are retained. New dependencies
+that require exceptions need these build flags reviewed.
+
+NimBLE Security Manager (legacy pairing and Secure Connections), bonding, and
+bond persistence are disabled through the library's `MYNEWT_VAL_*` overrides.
+BLE discovery and public username/glyph reads remain available. Button-based
+friend pairing stores an application friend record, independently of BLE bonds.
+Private or authenticated BLE features would require restoring security support.
 
 For an interactive build, flash, hardware-revision setup, and optional Wi-Fi
 setup, run one of the helper scripts from the repository root:

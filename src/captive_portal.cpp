@@ -264,16 +264,14 @@ void GlyphWebServer::registerRoutes() {
   server_.on("/api/nearby", HTTP_GET, [this] { sendNearby(); });
   server_.on("/api/people", HTTP_GET, [this] { sendPeople(); });
   server_.on("/api/export/users.csv", HTTP_GET, [this] { exportUsers(); });
-  server_.on("/api/export/encounters.csv", HTTP_GET,
-             [this] { exportEncounters(); });
+  server_.on("/api/export/encounters.csv", HTTP_GET, [this] { exportEncounters(); });
   server_.on("/api/display", HTTP_POST, [this] { setDisplay(); });
   server_.on("/api/display/preview", HTTP_POST, [this] { previewDisplay(); });
   server_.on("/api/custom", HTTP_POST, [this] { setCustom(); });
   server_.on("/api/brightness", HTTP_POST, [this] { setBrightness(); });
   server_.on("/api/flashlight", HTTP_POST, [this] { setFlashlight(); });
   server_.on("/api/time", HTTP_POST, [this] { setUtcFromBrowser(); });
-  server_.on("/api/proximity/reset", HTTP_POST,
-             [this] { resetProximityData(); });
+  server_.on("/api/proximity/reset", HTTP_POST, [this] { resetProximityData(); });
   server_.on("/api/friend", HTTP_POST, [this] { setFriend(); });
   server_.on("/api/settings", HTTP_POST, [this] { applySettings(); });
   server_.on("/api/restart", HTTP_POST, [this] { restartController(); });
@@ -368,8 +366,7 @@ void GlyphWebServer::sendSettings() {
   doc["firmwareVersion"] = FIRMWARE_VERSION;
   doc["wifi1"] = globalSettings.wifi[0].ssid;
   doc["wifi2"] = globalSettings.wifi[1].ssid;
-  doc["connectedSsid"] =
-      WiFi.status() == WL_CONNECTED ? WiFi.SSID() : String();
+  doc["connectedSsid"] = WiFi.status() == WL_CONNECTED ? WiFi.SSID() : String();
   String body;
   serializeJson(doc, body);
   server_.send(200, "application/json", body);
