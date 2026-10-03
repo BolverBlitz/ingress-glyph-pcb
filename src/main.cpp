@@ -171,7 +171,11 @@ void setup() {
 
 void loop() {
   loopSerialConfig();
-  if (temperatureController.loop()) ++displayRevision;
+  if (temperatureController.loop()) {
+    // Apply thermal changes before network work or any mode-specific early exit.
+    leds.refreshPowerLimit();
+    ++displayRevision;
+  }
   if (loopTimeService()) proximityManager.onTimeSynchronized();
   web.loop();
   miscController.loop();

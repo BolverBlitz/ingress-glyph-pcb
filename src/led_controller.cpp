@@ -1,6 +1,7 @@
 #include "led_controller.h"
 
 #include <cfloat>
+#include <cstring>
 
 #include "app_state.h"
 #include "glyph_drawer.h"
@@ -87,10 +88,27 @@ void LedController::showPowerLimited(const Rgbw *pixels, uint32_t limitMw,
   showPowerLimitedInternal(pixels, limitMw, allowRgbWithFullWhite, false);
 }
 
+void LedController::refreshPowerLimit() {
+  if (!hasRequestedFrame_) return;
+  showPowerLimitedInternal(lastRequestedFrame_, lastSoftwareLimitMw_,
+                           lastAllowRgbWithFullWhite_,
+                           lastApplyGlobalBrightness_);
+}
+
 void LedController::showPowerLimitedInternal(const Rgbw *pixels,
                                              uint32_t softwareLimitMw,
                                              bool allowRgbWithFullWhite,
                                              bool applyGlobalBrightness) {
+  // Keep the requested colors, not the already dimmed output, so stationary
+  // frames can follow thermal shutdown and recovery without restarting a mode.
+  if (pixels != lastRequestedFrame_) {
+    memcpy(lastRequestedFrame_, pixels, sizeof(lastRequestedFrame_));
+  }
+  lastSoftwareLimitMw_ = softwareLimitMw;
+  lastAllowRgbWithFullWhite_ = allowRgbWithFullWhite;
+  lastApplyGlobalBrightness_ = applyGlobalBrightness;
+  hasRequestedFrame_ = true;
+
   const uint32_t hardwareLimitMw = min(
       hardwareLedLimitMw(globalSettings.hardwareRevision),
       thermalPowerLimitMw);
