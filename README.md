@@ -90,6 +90,22 @@ When Wi-Fi setup is requested, the script waits
 for the connection and prints the controller's assigned IP address.
 On Windows, the port prompt accepts either `COM11` or just `11`.
 
+## Display effects
+
+The Main page's Effects section is available in Glyph Sequence, Random Glyphs,
+and Draw modes. Choose Off or Fade. Fade also applies to friend glyph playback
+when enabled, with six directions and three transition types:
+
+- Quickfade: each LED reaches black before fading into the next frame, while
+  outgoing and incoming waves overlap across the display.
+- Slowfade: the entire display reaches black before the incoming wave starts.
+- Mix: directly blend the old and new frames without inserting a black step.
+
+Fade duration (100–60000 ms) covers the entire transition. The switch interval
+is the hold time after the transition finishes. Effects support live preview and
+are stored with the display settings when saved. Existing settings default to
+Off. Flashlight, SOS, and pairing feedback retain their immediate controls.
+
 ## Releases
 
 Push a semantic-version tag matching `FIRMWARE_VERSION` in `src/config.h` to

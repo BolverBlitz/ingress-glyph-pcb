@@ -16,11 +16,15 @@
 #include "display_store.h"
 #include "captive_portal.h"
 #include "time_service.h"
+#include "frame_transition.h"
 
 LedController leds;
 GlyphDrawer drawer;
 GlyphWebServer web;
 Rgbw outputFrame[LED_COUNT] = {};
+FrameTransition frameTransition;
+uint32_t lastEffectFrameMs = 0;
+bool playbackSuspended = false;
 uint8_t activePage = 0;
 uint32_t lastPageChangeMs = 0;
 uint32_t renderedRevision = UINT32_MAX;
@@ -49,7 +53,7 @@ static void chooseRandomGlyph() {
   randomGlyph = next;
 }
 
-static void renderPage() {
+static bool renderPage(bool forceTransition = false) {
   const uint8_t count = max<uint8_t>(1, pageCount());
   activePage %= count;
   if (displaySettings.mode == DisplayMode::Draw) {
@@ -64,9 +68,23 @@ static void renderPage() {
         static_cast<uint16_t>(displaySettings.coreBrightnessPercent) * 256U / 100U);
     drawer.draw(GLYPHS[glyphIndex].pattern, line, core, outputFrame);
   }
-  leds.showPowerLimited(outputFrame);
+  const uint32_t now = millis();
+  const bool changed = frameTransition.setTarget(
+      outputFrame, displaySettings.effects, now,
+      globalSettings.rotationQuarterTurns, forceTransition);
+  leds.showPowerLimited(frameTransition.frame());
+  lastEffectFrameMs = now;
   renderedRevision = displayRevision;
   renderedMode = displaySettings.mode;
+  return changed;
+}
+
+static bool advancePlayback(uint32_t now) {
+  if (!frameTransition.active() || now - lastEffectFrameMs < 20U) return false;
+  frameTransition.advance(now);
+  leds.showPowerLimited(frameTransition.frame());
+  lastEffectFrameMs = now;
+  return !frameTransition.active();
 }
 
 static bool renderFriendMode() {
@@ -81,11 +99,31 @@ static bool renderFriendMode() {
     return false;
   }
   const uint32_t now = millis();
+  const bool entering = !friendModeWasRendering;
   if (!friendModeWasRendering) {
     friendModeWasRendering = true;
     friendModeIndex = 0;
     friendModeStartedMs = now;
     lastFriendModeFrameMs = 0;
+  }
+  if (displaySettings.effects.effect == DisplayEffect::Fade) {
+    bool cycle = false;
+    if (!entering && !frameTransition.active() &&
+        now - friendModeStartedMs >= displaySettings.intervalMs) {
+      friendModeIndex = (friendModeIndex + 1) % count;
+      friendModeStartedMs = now;
+      cycle = true;
+    }
+    const Rgbw *glyph = proximityManager.loadedFriendGlyph(friendModeIndex % count);
+    if (!glyph) return true;
+    if (frameTransition.setTarget(glyph, displaySettings.effects, now,
+                                  globalSettings.rotationQuarterTurns, cycle)) {
+      friendModeStartedMs = now;
+      leds.showPowerLimited(frameTransition.frame());
+      lastEffectFrameMs = now;
+    }
+    if (advancePlayback(now)) friendModeStartedMs = now;
+    return true;
   }
   constexpr uint32_t CYCLE_MS =
       FRIEND_MODE_FADE_MS * 2U + FRIEND_MODE_HOLD_MS;
@@ -107,6 +145,7 @@ static bool renderFriendMode() {
   for (size_t i = 0; i < LED_COUNT; ++i) {
     outputFrame[i] = scaledColor(glyph[i], scale);
   }
+  frameTransition.reset(outputFrame);
   leds.showPowerLimited(outputFrame);
   lastFriendModeFrameMs = now;
   return true;
@@ -165,28 +204,39 @@ void loop() {
     }
   }
 
-  if (miscController.active()) return;
+  if (miscController.active()) {
+    frameTransition.clear();
+    playbackSuspended = true;
+    return;
+  }
+  if (playbackSuspended) {
+    playbackSuspended = false;
+    renderedRevision = UINT32_MAX;
+    lastPageChangeMs = millis();
+  }
   if (renderFriendMode()) return;
 
   if (renderedRevision != displayRevision) {
     const bool modeChanged = renderedMode != displaySettings.mode;
-    activePage = 0;
+    if (modeChanged) activePage = 0;
     if (modeChanged && displaySettings.mode == DisplayMode::GlyphRandom) {
       chooseRandomGlyph();
     }
-    lastPageChangeMs = millis();
-    renderPage();
+    if (renderPage()) lastPageChangeMs = millis();
   }
 
+  const uint32_t now = millis();
+  if (advancePlayback(now)) lastPageChangeMs = now;
+
   const bool shouldCycle = displaySettings.mode == DisplayMode::GlyphRandom || pageCount() > 1;
-  if (shouldCycle &&
-      millis() - lastPageChangeMs >= displaySettings.intervalMs) {
+  if (shouldCycle && !frameTransition.active() &&
+      now - lastPageChangeMs >= displaySettings.intervalMs) {
     if (displaySettings.mode == DisplayMode::GlyphRandom) {
       chooseRandomGlyph();
     } else {
       activePage = (activePage + 1) % pageCount();
     }
     lastPageChangeMs = millis();
-    renderPage();
+    renderPage(true);
   }
 }

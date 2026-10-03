@@ -5,6 +5,7 @@
 
 #include "app_state.h"
 #include "glyphs.h"
+#include "effect_settings_json.h"
 
 namespace {
 constexpr char DISPLAY_FILE[] = "/display-settings.json";
@@ -39,6 +40,7 @@ void toJson(JsonDocument &doc) {
   addColor(doc["core"].to<JsonArray>(), displaySettings.coreColor);
   doc["lineBrightness"] = displaySettings.lineBrightnessPercent;
   doc["coreBrightness"] = displaySettings.coreBrightnessPercent;
+  effectSettingsToJson(doc["effects"].to<JsonObject>(), displaySettings.effects);
 }
 
 bool fromJson(JsonDocument &doc, DisplaySettings &target) {
@@ -64,6 +66,12 @@ bool fromJson(JsonDocument &doc, DisplaySettings &target) {
       constrain(doc["lineBrightness"] | 100, 0, 100);
   target.coreBrightnessPercent =
       constrain(doc["coreBrightness"] | 100, 0, 100);
+  // Effect settings were added after version 2; absent data uses struct defaults.
+  if (!doc["effects"].isUnbound()) {
+    EffectSettings effects;
+    if (!effectSettingsFromJson(doc["effects"].as<JsonObjectConst>(), effects)) return false;
+    target.effects = effects;
+  }
   return true;
 }
 

@@ -20,6 +20,7 @@
 #include "temperature_controller.h"
 #include "time_service.h"
 #include "web_ui.h"
+#include "effect_settings_json.h"
 
 static Rgbw jsonColor(JsonArrayConst a, const Rgbw &fallback) {
   if (a.size() != 4) return fallback;
@@ -452,6 +453,7 @@ void GlyphWebServer::sendDisplay() {
   addColor(doc["core"].to<JsonArray>(), displaySettings.coreColor);
   doc["lineBrightness"] = displaySettings.lineBrightnessPercent;
   doc["coreBrightness"] = displaySettings.coreBrightnessPercent;
+  effectSettingsToJson(doc["effects"].to<JsonObject>(), displaySettings.effects);
   String body;
   serializeJson(doc, body);
   server_.send(200, "application/json", body);
@@ -663,6 +665,15 @@ void GlyphWebServer::applyDisplay(bool persist) {
       constrain(doc["lineBrightness"] | 100, 0, 100);
   displaySettings.coreBrightnessPercent =
       constrain(doc["coreBrightness"] | 100, 0, 100);
+  if (!doc["effects"].isUnbound()) {
+    EffectSettings effects;
+    if (!effectSettingsFromJson(doc["effects"].as<JsonObjectConst>(), effects)) {
+      displaySettings = previous;
+      server_.send(400, "text/plain", "Invalid display effects");
+      return;
+    }
+    displaySettings.effects = effects;
+  }
   if (persist && !saveDisplaySettings()) {
     displaySettings = previous;
     server_.send(500, "text/plain", "Could not store display settings");

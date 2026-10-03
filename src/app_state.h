@@ -2,6 +2,7 @@
 
 #include "config.h"
 #include "rgbw.h"
+#include "effect_settings.h"
 
 enum class DisplayMode : uint8_t { GlyphSequence, GlyphRandom, Draw };
 enum class LedPowerLimitState : uint8_t { NotLimited, Software, Hardware };
@@ -16,6 +17,7 @@ struct DisplaySettings {
   Rgbw coreColor{0, 255, 255, 0};
   uint8_t lineBrightnessPercent = 100;
   uint8_t coreBrightnessPercent = 100;
+  EffectSettings effects;
 };
 
 struct WifiProfile {
