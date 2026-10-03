@@ -6,6 +6,8 @@
 
 #include "config.h"
 #include "rgbw.h"
+#include "ble_exchange.h"
+#include <atomic>
 
 class NimBLECharacteristic;
 class NimBLEClient;
@@ -18,15 +20,17 @@ class ProximityManager {
   void setEnabled(bool enabled);
   void setLocalEmergency(bool emergency);
   void setLocalFriendRequest(bool active);
-  void notifyFriendPairingComplete();
   void refreshIdentity();
   void onTimeSynchronized();
   bool resetStoredData();
   bool setFriend(uint16_t userId, bool friendFlag);
-  bool mutualFriendRequestActive() const;
-  bool prepareFriendPairing();
-  bool completeFriendPairing(Rgbw remoteGlyph[LED_COUNT],
-                             Rgbw ownGlyph[LED_COUNT], String &username);
+  bool friendPairingStart(uint32_t &startMs) const;
+  bool friendPairingBusy() const {
+    return enabled_ && (localFriendRequest_ || pairingSession_);
+  }
+  bool takeFriendPairingSuccess(Rgbw remoteGlyph[LED_COUNT],
+                               Rgbw ownGlyph[LED_COUNT], String &username,
+                               uint32_t &successMs);
   uint8_t loadedFriendGlyphCount() const;
   const Rgbw *loadedFriendGlyph(uint8_t ordinal) const;
   void enqueueAdvertisement(const NimBLEAdvertisedDevice *device);
@@ -71,6 +75,7 @@ class ProximityManager {
     uint8_t faction;
     uint8_t message;
     int16_t rssi;
+    uint32_t receivedMs;
   };
 
   NearbyEntry nearby_[MAX_NEARBY];
@@ -79,10 +84,10 @@ class ProximityManager {
   NimBLEClient *client_ = nullptr;
   NimBLECharacteristic *usernameCharacteristic_ = nullptr;
   NimBLECharacteristic *agentGlyphCharacteristic_ = nullptr;
-  bool enabled_ = false;
+  std::atomic<bool> enabled_{false};
   bool storeReady_ = false;
   bool initialized_ = false;
-  bool scanRestartNeeded_ = false;
+  std::atomic<bool> scanRestartNeeded_{false};
   String advertisedUsername_;
   bool advertisedFaction_ = false;
   uint8_t localMessage_ = 0;
@@ -91,13 +96,36 @@ class ProximityManager {
   bool localEmergency_ = false;
   bool localFriendRequest_ = false;
   uint32_t friendPairingAckUntilMs_ = 0;
+  BleExchange::Worker worker_;
+  BleExchange::Server pairingServer_;
+  bool workerReady_ = false;
+  bool workerBusy_ = false;
+  uint8_t ownDeviceId_[6] = {};
+  uint8_t pairingPeer_[6] = {};
+  uint32_t pairingSession_ = 0;
+  uint32_t pairingPreparedMs_ = 0;
+  uint32_t pairingStartMs_ = 0;
+  uint32_t pairingContactMs_ = 0;
+  bool pairingScheduled_ = false;
+  bool pairingCompleted_ = false;
+  bool pairingDelivered_ = false;
+  FriendProtocol::RequestGate pairingRequestGate_;
+  bool pairingCoordinator_ = false;
+  BleExchange::Identity pairingOwn_;
+  BleExchange::Identity pairingRemote_;
 
   void startBle();
   void stopBle();
   void startScan();
   void processObservation(const Observation &observation);
-  void fetchUsername(NearbyEntry &entry);
-  bool fetchAgentGlyph(NearbyEntry &entry);
+  bool queueExchange(NearbyEntry &entry, bool pairing);
+  void processExchangeResults();
+  void processPairingCommands();
+  void loopFriendPairing();
+  void cancelFriendPairing(bool retryPreparation = false);
+  void publishPairingStatus();
+  void applyIdentity(NearbyEntry &entry, const BleExchange::Identity &identity,
+                     bool glyphValid, bool persistName = true);
   bool copyOwnAgentGlyph(Rgbw output[LED_COUNT]) const;
   void refreshAgentGlyph();
   void expireNearby();

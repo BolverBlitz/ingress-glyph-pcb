@@ -1,4 +1,5 @@
 #include "misc_controller.h"
+#include "friend_pairing_protocol.h"
 
 #include <math.h>
 
@@ -166,65 +167,36 @@ void MiscController::setRemoteEmergency(bool active) {
 }
 
 bool MiscController::friendButtonHeld() const {
-  return mode_ == MiscMode::Normal && !remoteEmergencyActive_ &&
+  return mode_ == MiscMode::Normal && !remoteEmergencyActive_ && !friendSuccessActive_ &&
          button2_.pressed && !button1_.pressed && !friendPairingConsumed_;
 }
 
-bool MiscController::friendBroadcastRequested() const {
-  return friendButtonHeld() || friendPairingActive_;
-}
-
-void MiscController::setFriendPairing(bool active) {
-  const bool forceCancel = friendSuccessActive_ ||
-                           mode_ != MiscMode::Normal ||
-                           remoteEmergencyActive_;
-  if (forceCancel) {
-    active = false;
-  }
-  const uint32_t now = millis();
-  if (friendPairingActive_ &&
-      now - friendPairingStartedMs_ >=
-          FRIEND_PAIRING_HOLD_MS + FRIEND_PAIRING_EXCHANGE_TIMEOUT_MS) {
-    active = false;
-    friendPairingConsumed_ = true;
-  }
-  if (!active && friendPairingActive_ && !forceCancel &&
-      now - friendPairingStartedMs_ >= FRIEND_PAIRING_HOLD_MS &&
-      now - friendPairingStartedMs_ <
-          FRIEND_PAIRING_HOLD_MS + FRIEND_PAIRING_EXCHANGE_TIMEOUT_MS) {
-    // Five valid seconds latch the exchange. Releasing at exactly five
-    // seconds must not cancel an in-flight GATT read on either device.
-    return;
-  }
-  if (active == friendPairingActive_) return;
+void MiscController::setFriendPairing(bool active, uint32_t startMs) {
+  if (friendSuccessActive_ || mode_ != MiscMode::Normal || remoteEmergencyActive_) active = false;
+  if (active == friendPairingActive_ && (!active || friendPairingStartedMs_ == startMs)) return;
   friendPairingActive_ = active;
   if (active) {
-    // Both devices begin when the mutual BLE request is first observed. Using
-    // the local button timestamp made the device pressed first jump ahead.
-    friendPairingStartedMs_ = now;
+    friendPairingStartedMs_ = startMs;
     lastFriendFrameMs_ = 0;
-    renderFriendPairing(friendPairingStartedMs_);
+    renderFriendPairing(millis());
   } else {
     ++displayRevision;
   }
 }
 
-bool MiscController::friendPairingReady() const {
-  return friendPairingActive_ &&
-         millis() - friendPairingStartedMs_ >= FRIEND_PAIRING_HOLD_MS;
-}
-
 void MiscController::showFriendPairingSuccess(
-    const Rgbw remoteGlyph[LED_COUNT], const Rgbw ownGlyph[LED_COUNT]) {
+    const Rgbw remoteGlyph[LED_COUNT], const Rgbw ownGlyph[LED_COUNT],
+    uint32_t successMs) {
   memcpy(friendRemoteGlyph_, remoteGlyph, sizeof(friendRemoteGlyph_));
   memcpy(friendOwnGlyph_, ownGlyph, sizeof(friendOwnGlyph_));
-  // Preserve the exact last pairing frame. Recreating a color wheel here
-  // changed its phase and caused a visible jump before the fade-out.
+  // Both devices fade from the same final rainbow, independent of the
+  // last 40 ms render tick or delays in the loop.
+  renderFriendPairing(successMs);
   memcpy(friendRainbowFrame_, frame_, sizeof(friendRainbowFrame_));
   friendPairingActive_ = false;
   friendSuccessActive_ = true;
   friendPairingConsumed_ = true;
-  friendSuccessStartedMs_ = millis();
+  friendSuccessStartedMs_ = successMs;
   lastFriendFrameMs_ = 0;
 }
 
@@ -320,7 +292,7 @@ void MiscController::renderRemoteEmergency(uint32_t now) {
 
 void MiscController::renderFriendPairing(uint32_t now) {
   if (!leds_ || !friendPairingActive_) return;
-  const uint32_t elapsed = min<uint32_t>(now - friendPairingStartedMs_,
+  const uint32_t elapsed = min<uint32_t>(FriendProtocol::elapsed(now, friendPairingStartedMs_),
                                          FRIEND_PAIRING_HOLD_MS);
   const uint32_t front =
       static_cast<uint32_t>(maxRemoteEmergencyRadius_) * elapsed /

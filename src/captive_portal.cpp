@@ -402,6 +402,11 @@ void GlyphWebServer::sendSettings() {
 }
 
 void GlyphWebServer::scanWifi() {
+  // Disable Wi-Fi scanning if a friend pairing animation is in progress. (Uses too much CPU and can interfere with timing)
+  if (proximityManager.friendPairingBusy()) {
+    server_.send(409, "application/json", "{\"error\":\"Friend pairing in progress; retry after the animation\"}");
+    return;
+  }
   const int count = WiFi.scanNetworks(false, true);
   JsonDocument doc;
   JsonArray networks = doc.to<JsonArray>();

@@ -30,8 +30,6 @@ uint32_t lastPageChangeMs = 0;
 uint32_t renderedRevision = UINT32_MAX;
 uint16_t randomGlyph = 0;
 DisplayMode renderedMode = DisplayMode::GlyphSequence;
-uint32_t lastFriendPairAttemptMs = 0;
-uint32_t lastFriendPrepareAttemptMs = 0;
 bool friendModeWasRendering = false;
 uint8_t friendModeIndex = 0;
 uint32_t friendModeStartedMs = 0;
@@ -182,30 +180,21 @@ void loop() {
   proximityManager.setLocalEmergency(
       miscController.mode() == MiscMode::Emergency);
   proximityManager.setLocalFriendRequest(
-      miscController.friendBroadcastRequested());
+      miscController.friendButtonHeld());
   proximityManager.loop();
   miscController.setRemoteEmergency(proximityManager.remoteEmergencyActive());
 
-  miscController.setFriendPairing(
-      miscController.friendButtonHeld() &&
-      proximityManager.mutualFriendRequestActive());
-  if (miscController.friendPairingInProgress() &&
-      millis() - lastFriendPrepareAttemptMs >= 1000U) {
-    lastFriendPrepareAttemptMs = millis();
-    proximityManager.prepareFriendPairing();
-  }
-  if (miscController.friendPairingReady() &&
-      millis() - lastFriendPairAttemptMs >= 1000U) {
-    lastFriendPairAttemptMs = millis();
-    Rgbw remoteGlyph[LED_COUNT];
-    Rgbw ownGlyph[LED_COUNT];
-    String remoteUsername;
-    if (proximityManager.completeFriendPairing(remoteGlyph, ownGlyph,
-                                               remoteUsername)) {
-      Serial.printf("Friends: paired with %s\n", remoteUsername.c_str());
-      proximityManager.notifyFriendPairingComplete();
-      miscController.showFriendPairingSuccess(remoteGlyph, ownGlyph);
-    }
+  uint32_t pairingStartMs;
+  const bool pairingActive = proximityManager.friendPairingStart(pairingStartMs);
+  miscController.setFriendPairing(pairingActive, pairingStartMs);
+  Rgbw remoteGlyph[LED_COUNT];
+  Rgbw ownGlyph[LED_COUNT];
+  String remoteUsername;
+  uint32_t successMs;
+  if (proximityManager.takeFriendPairingSuccess(remoteGlyph, ownGlyph,
+                                                remoteUsername, successMs)) {
+    Serial.printf("Friends: paired with %s\n", remoteUsername.c_str());
+    miscController.showFriendPairingSuccess(remoteGlyph, ownGlyph, successMs);
   }
 
   if (miscController.active()) {

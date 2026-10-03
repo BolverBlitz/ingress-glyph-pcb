@@ -17,12 +17,9 @@ class MiscController {
            friendPairingActive_ || friendSuccessActive_;
   }
   bool friendButtonHeld() const;
-  bool friendBroadcastRequested() const;
-  void setFriendPairing(bool active);
-  bool friendPairingReady() const;
-  bool friendPairingInProgress() const { return friendPairingActive_; }
+  void setFriendPairing(bool active, uint32_t startMs);
   void showFriendPairingSuccess(const Rgbw remoteGlyph[LED_COUNT],
-                                const Rgbw ownGlyph[LED_COUNT]);
+                                const Rgbw ownGlyph[LED_COUNT], uint32_t successMs);
   uint8_t flashlightBrightness() const { return flashlightBrightness_; }
   uint8_t flashlightTemperature() const { return flashlightTemperature_; }
   bool setFlashlight(bool enabled);

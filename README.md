@@ -23,11 +23,62 @@ seconds.
   mode is saved after 10 seconds without further button input.
 - Hold Button 1 for 2 seconds: toggle Flashlight mode on or off.
 - In Flashlight mode, press Button 2: cycle 25%, 60%, and 100% brightness.
-- Hold Button 2 on two nearby devices for 5 seconds: add each other as friends
-  and exchange the Draw page whose name exactly matches each Agent username.
+- Hold Button 2 on two nearby devices until the shared five-second rainbow
+  finishes: add each other as friends and exchange the Draw page whose name
+  exactly matches each Agent username. Connection setup happens before the
+  rainbow starts, so total button-hold time can be longer than five seconds.
 - Hold both buttons for 10 seconds: enter Emergency mode, pulse white SOS, and
   broadcast the Emergency message to nearby devices.
 - In Emergency mode, hold both buttons for 2 seconds: disable Emergency mode.
+
+## Coordinated friendship animation
+
+Both devices need this firmware for the new friendship protocol. Discovery,
+Emergency broadcasts and public identity reads still work with older firmware;
+friend pairing does not fall back to the old animation timing.
+
+The device with the smaller device ID opens a single BLE connection. It sends
+an offer containing a random session ID and its identity. The other device
+accepts only while Button 2 is held, at close range, and with no active emergency
+or other session. Both identities are frozen for the exchange. After READY, the
+coordinator measures the peer's `millis()` offset with three GATT reads and uses
+the sample with the shortest round-trip time. Samples over 200 ms are rejected.
+An acknowledged start is normally scheduled 350 ms ahead, in each device's own
+clock. Slower links automatically receive up to 700 ms to complete the START
+write/read acknowledgement. Rainbow progress and the success animation use this scheduled timeline,
+including when the main loop delivers a frame slightly late.
+
+Early release, emergency, an eight-second preparation timeout or 1.2 seconds
+without peer contact cancel the session. Setup failures before the animation
+starts retry automatically after 250 ms, with at most three attempts in an
+eight-second window. Release and press again after an animation is cancelled
+or the retry budget is exhausted. The incoming offer supplies the coordinator's
+intent even if its request advertisement has not arrived; local button consent,
+device-ID ordering, freshness and the RSSI threshold are still required.
+Heartbeats continue through the hold; the completed status remains available
+for six seconds so the peer can finish its acknowledgement. A new gesture after
+the success animation can replace that retained status immediately; it does not
+wait for the six-second cleanup or become blocked by it. Wireless cancellation
+is best effort: loss of contact right at the completion boundary can still leave
+only one device with a saved friendship. There is no atomic distributed commit.
+
+All outgoing BLE connects, discovery and identity reads run in one FreeRTOS
+worker. Queues transfer snapshots to the main task, which owns LED rendering,
+settings and proximity storage. Disabling BLE invalidates pending work and
+defers NimBLE destruction until the worker is finished. The HTTP Wi-Fi scan
+returns a retryable error during pairing because its synchronous scan would
+otherwise stall animation and temperature sampling.
+
+The GATT status and command characteristics use UUID suffixes `03` and `04` in
+the existing `44424700-696e-6772-6573-732d676c7970` service. Packets start with
+`FP`, version 1 and a phase/command byte, followed by a little-endian 32-bit
+session ID, the sender's six-byte device ID and a little-endian timestamp.
+OFFER adds a glyph-present byte, a name-length byte, 64 name bytes and 69 RGBW
+pixels. Other commands are START, CANCEL and HEARTBEAT. Status phases are IDLE,
+READY and SCHEDULED; status reads stamp the server's current `millis()`.
+
+Run `python -m unittest discover -s tests -v` for host checks of the timing,
+release/timeout rules and malformed or stale packets.
 
 
 ## Build and flash
