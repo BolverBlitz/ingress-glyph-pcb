@@ -24,6 +24,7 @@ class ProximityManager {
   void onTimeSynchronized();
   bool resetStoredData();
   bool setFriend(uint16_t userId, bool friendFlag);
+  const char *friendshipAction(uint16_t userId, const String &action);
   bool friendPairingStart(uint32_t &startMs) const;
   bool friendPairingBusy() const {
     return enabled_ && (localFriendRequest_ || pairingSession_);
@@ -66,6 +67,16 @@ class ProximityManager {
     uint32_t lastSeenMs = 0;
     uint32_t lastNameAttemptMs = 0;
     uint32_t lastGlyphAttemptMs = 0;
+    bool friendSyncPending = false; // Armed by a successfully recorded new visit.
+    FriendSync::RemovalNotice removalNotice;
+    uint32_t lastRequestAttemptMs = 0;
+    FriendSync::PendingRequest outgoingRequest;
+    FriendSync::PendingRequest incomingRequest;
+    FriendSync::PendingRequest webConsent;
+    uint32_t cancelRequestId = 0;
+    uint32_t cancelRequestMs = 0;
+    uint32_t closedRequestId = 0;
+    bool acceptPending = false;
     bool firstLogged = false;
   };
   struct Observation {
@@ -103,6 +114,9 @@ class ProximityManager {
   uint8_t ownDeviceId_[6] = {};
   uint8_t pairingPeer_[6] = {};
   uint32_t pairingSession_ = 0;
+  uint32_t pairingWebRequestId_ = 0;
+  uint8_t backgroundCursor_ = 0;
+  uint32_t backgroundResumeMs_ = 0;
   uint32_t pairingPreparedMs_ = 0;
   uint32_t pairingStartMs_ = 0;
   uint32_t pairingContactMs_ = 0;
@@ -118,7 +132,12 @@ class ProximityManager {
   void stopBle();
   void startScan();
   void processObservation(const Observation &observation);
-  bool queueExchange(NearbyEntry &entry, bool pairing);
+  bool queueExchange(NearbyEntry &entry, bool pairing,
+                     uint8_t friendshipCommand = 0);
+  void processFriendshipCommand(const BleExchange::Incoming &incoming,
+                                NearbyEntry &entry);
+  void expireFriendRequests();
+  void clearFriendRequests(NearbyEntry &entry);
   void processExchangeResults();
   void processPairingCommands();
   void loopFriendPairing();

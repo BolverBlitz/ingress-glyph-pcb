@@ -642,9 +642,13 @@ void GlyphWebServer::setFriend() {
     return;
   }
   const uint16_t userId = doc["userId"] | 0;
-  const bool friendFlag = doc["friend"] | true;
-  if (!userId || !proximityManager.setFriend(userId, friendFlag)) {
-    server_.send(404, "text/plain", "Agent not found");
+  const String action = doc["action"] | "";
+  if (action != "request" && action != "accept" && action != "cancel" && action != "remove") {
+    server_.send(400, "text/plain", "Invalid friendship action");
+    return;
+  }
+  if (const char *error = proximityManager.friendshipAction(userId, action)) {
+    server_.send(409, "text/plain", error);
     return;
   }
   server_.send(204);

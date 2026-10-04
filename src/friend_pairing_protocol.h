@@ -7,7 +7,7 @@
 // Explicit byte encoding keeps this protocol independent of compiler padding.
 namespace FriendProtocol {
 constexpr uint8_t VERSION = 1;
-enum Command : uint8_t { Offer = 1, Start = 2, Cancel = 3, Heartbeat = 4 };
+enum Command : uint8_t { Offer = 1, Start = 2, Cancel = 3, Heartbeat = 4, WebOffer = 5 };
 enum Phase : uint8_t { Idle = 0, Ready = 1, Scheduled = 2 };
 constexpr size_t HEADER_BYTES = 18;
 constexpr size_t NAME_BYTES = 64;
@@ -65,10 +65,12 @@ inline HoldDecision holdDecision(uint32_t now, uint32_t prepared, uint32_t start
 class RequestGate {
  public:
   void released() { blocked_ = false; attempts_ = 0; }
+  bool exhausted(uint32_t now) const {
+    return blocked_ || attempts_ >= MAX_PREPARE_ATTEMPTS ||
+           (attempts_ && now - firstAttemptMs_ >= PREPARE_RETRY_WINDOW_MS);
+  }
   bool canAttempt(uint32_t now) const {
-    if (blocked_) return false;
-    return !attempts_ || (attempts_ < MAX_PREPARE_ATTEMPTS &&
-        now - firstAttemptMs_ < PREPARE_RETRY_WINDOW_MS && reached(now, retryAtMs_));
+    return !exhausted(now) && (!attempts_ || reached(now, retryAtMs_));
   }
   void attempted(uint32_t now) {
     if (!attempts_) firstAttemptMs_ = now;
@@ -123,7 +125,7 @@ inline bool matches(const uint8_t *bytes, size_t size, uint32_t session,
 }
 inline bool validCommand(const uint8_t *bytes, size_t size) {
   if (!validHeader(bytes, size) || !read32(bytes + 4)) return false;
-  if (bytes[3] == Offer) {
+  if (bytes[3] == Offer || bytes[3] == WebOffer) {
     return size == OFFER_BYTES && bytes[18] <= 1 && bytes[19] <= NAME_BYTES;
   }
   return size == HEADER_BYTES && bytes[3] >= Start && bytes[3] <= Heartbeat;

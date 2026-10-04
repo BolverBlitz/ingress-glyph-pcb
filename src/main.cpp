@@ -186,6 +186,8 @@ void loop() {
 
   uint32_t pairingStartMs;
   const bool pairingActive = proximityManager.friendPairingStart(pairingStartMs);
+  // Disable flashlight mode if a friend pairing is active.
+  if (pairingActive && miscController.mode() == MiscMode::Flashlight) miscController.setFlashlight(false);
   miscController.setFriendPairing(pairingActive, pairingStartMs);
   Rgbw remoteGlyph[LED_COUNT];
   Rgbw ownGlyph[LED_COUNT];

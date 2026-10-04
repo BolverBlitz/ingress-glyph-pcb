@@ -35,7 +35,8 @@ document.documentElement.classList.toggle('enl', localStorage.getItem('enlighten
   <section aria-labelledby="nearbyTitle">
     <h2 id="nearbyTitle">Bluetooth &amp; friends</h2>
     <div class="help-gesture"><strong>Bluetooth proximity broadcasting</strong><p>Lets this device announce itself and find nearby devices. Leave it on for the Nearby page, friend pairing, and local emergency alerts.</p></div>
-    <div class="help-gesture"><strong>Friend Mode</strong><p>When a saved friend is nearby and their Agent Glyph is available, show friends' drawings on the LEDs instead of the normal display. The drawings cycle while those friends are in range.</p></div>
+    <div class="help-gesture"><strong>Friend Mode</strong><p>When a saved friend is nearby and their Agent Glyph is available, show friends' drawings on the LEDs instead of the normal display. Friendship is checked once when a new visit is recorded, regardless of Friend Mode. Removing a friend on one board notifies the other board immediately when nearby; if it is offline, the removal is reconciled at the next recorded visit. The drawings cycle while those friends are in range.</p></div>
+    <p class="help-note">Friendship requests expire after five minutes and disappear when the board restarts. Keep both boards nearby with Bluetooth enabled to accept a request.</p>
   </section>
   <section aria-labelledby="powerTitle">
     <h2 id="powerTitle">LED power limits</h2>

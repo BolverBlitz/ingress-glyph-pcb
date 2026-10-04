@@ -20,7 +20,7 @@ label { display: grid; gap: 6px; }
 .person.friend { border-color: #f0c84b; }
 .person.emergency-person { border-color: #ff5656; background: #3c0c11; }
 .emergency-note { display: block; margin-top: 4px; color: #ff7777; text-transform: uppercase; font-size: .78em; }
-.friend-button { display: inline-flex; align-items: center; min-height: 36px; margin: 0; padding: 6px 10px; background: #8b3c72; }
+.friend-button { display: inline-flex; align-items: center; min-height: 36px; margin: 0; padding: 6px 10px; }
 .friend-button:disabled { opacity: .55; }
 .muted { opacity: .75; }
 html.enl nav { background: #071408ee; }

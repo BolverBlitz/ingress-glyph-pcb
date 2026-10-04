@@ -10,8 +10,8 @@ constexpr uint8_t LED_PIN_REV1 = 2;  // WROOM-02 pad 16
 constexpr uint8_t LED_PIN_REV2 = 19;  // WROOM-02 pad 14
 constexpr uint8_t BUTTON_1_PIN = 1;  // WROOM-02 pad 17, active low
 constexpr uint8_t BUTTON_2_PIN = 4;  // WROOM-02 pad 3, active low
-constexpr uint8_t I2C_SDA_PIN = 5;
-constexpr uint8_t I2C_SCL_PIN = 6;
+constexpr uint8_t I2C_SDA_PIN = 5; // WROOM-02 pad 1 Temperature sensor SDA
+constexpr uint8_t I2C_SCL_PIN = 6; // WROOM-02 pad 2 Temperature sensor SCL
 
 // Hardware power limits
 #define REV1_MAX_LED_POWER_MW 4500UL
@@ -38,7 +38,7 @@ constexpr uint32_t DEFAULT_INTERVAL_MS = 2000UL;
 // Rev 2 board temperature protection. The hottest LED-board sensor controls
 // a linear power derating curve; an unavailable sensor produces a 0 mW cap.
 constexpr int32_t LED_THERMAL_DERATE_START_MC = 50000;
-constexpr int32_t LED_THERMAL_SHUTDOWN_MC = 70000;
+constexpr int32_t LED_THERMAL_SHUTDOWN_MC = 60000;
 constexpr uint32_t TEMPERATURE_SAMPLE_INTERVAL_MS = 1000UL;
 constexpr uint32_t TEMPERATURE_SENSOR_STALE_MS = 5000UL;
 constexpr uint32_t TEMPERATURE_SENSOR_RESCAN_MS = 5000UL;
@@ -56,7 +56,7 @@ constexpr uint32_t BLE_CONNECT_TIMEOUT_MS = 3000UL;
 constexpr uint32_t REMOTE_EMERGENCY_WAVE_MS = 2400UL;
 constexpr uint32_t REMOTE_EMERGENCY_FRAME_MS = 40UL;
 // BLE Friendship
-constexpr int16_t FRIEND_PAIRING_MIN_RSSI_DBM = -80;
+constexpr int16_t FRIEND_PAIRING_MIN_RSSI_DBM = -75;
 constexpr uint32_t FRIEND_PAIRING_HOLD_MS = 5000UL;
 constexpr uint32_t FRIEND_PAIRING_ACK_MS = 6000UL;
 constexpr uint32_t FRIEND_PAIRING_EXCHANGE_TIMEOUT_MS = 8000UL;

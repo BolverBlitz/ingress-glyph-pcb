@@ -1,4 +1,5 @@
 #include "friend_pairing_protocol.h"
+#include "friend_sync_protocol.h"
 #include <cstdlib>
 #include <iostream>
 
@@ -14,6 +15,81 @@ HoldDecision decide(uint32_t now, uint32_t prepared, uint32_t start,
 }
 
 int main() {
+  const uint8_t peer[6] = {1, 2, 3, 4, 5, 6};
+  const uint8_t other[6] = {1, 2, 3, 4, 5, 7};
+  FriendSync::Packet sync;
+  uint8_t fs[FriendSync::PACKET_BYTES];
+  FriendSync::packet(fs, FriendSync::Request, 77, peer, FriendSync::REQUEST_TTL_MS, true);
+  check(FriendSync::decode(fs, sizeof(fs), sync), "Valid friendship request rejected");
+  check(sync.type == FriendSync::Request && sync.nonce == 77 && sync.friendFlag &&
+        sync.remainingMs == FriendSync::REQUEST_TTL_MS, "Friendship request fields corrupted");
+  check(FriendSync::matches(sync, FriendSync::Request, 77, peer), "Friendship request correlation failed");
+  check(!FriendSync::matches(sync, FriendSync::Request, 78, peer) &&
+        !FriendSync::matches(sync, FriendSync::Request, 77, other), "Mismatched friendship packet accepted");
+  fs[0] = 'X'; check(!FriendSync::decode(fs, sizeof(fs), sync), "Bad friendship magic accepted");
+  FriendSync::packet(fs, FriendSync::Request, 77, peer, FriendSync::REQUEST_TTL_MS + 1);
+  check(!FriendSync::decode(fs, sizeof(fs), sync), "Overlong friendship request accepted");
+  FriendSync::packet(fs, FriendSync::Sync, 77, peer); fs[18] = 2;
+  check(!FriendSync::decode(fs, sizeof(fs), sync), "Invalid friendship boolean accepted");
+  FriendSync::packet(fs, FriendSync::Response, 77, peer, 0, false, 9);
+  check(!FriendSync::decode(fs, sizeof(fs), sync), "Invalid friendship result accepted");
+  FriendSync::packet(fs, FriendSync::Response, 77, peer, 0, true, FriendSync::Accepted);
+  check(FriendSync::decode(fs, sizeof(fs), sync) && FriendSync::validResponse(sync, 77, peer),
+        "Valid friendship response rejected");
+  check(!FriendSync::validResponse(sync, 78, peer) && !FriendSync::validResponse(sync, 77, other),
+        "Stale friendship response accepted");
+  FriendSync::packet(fs, FriendSync::Sync, 77, peer);
+  for (size_t n = 0; n < FriendSync::PACKET_BYTES; ++n)
+    check(!FriendSync::decode(fs, n, sync), "Truncated friendship packet accepted");
+  fs[2] = FriendSync::VERSION + 1; check(!FriendSync::decode(fs, sizeof(fs), sync), "Unknown FS version accepted");
+  fs[2] = FriendSync::VERSION; fs[3] = 99; check(!FriendSync::decode(fs, sizeof(fs), sync), "Unknown FS type accepted");
+  FriendSync::packet(fs, FriendSync::Sync, 0, peer); check(!FriendSync::decode(fs, sizeof(fs), sync), "Zero FS nonce accepted");
+  FriendSync::PendingRequest pending;
+  check(!pending.set(0, 100), "Zero request ID accepted");
+  check(pending.set(123, UINT32_MAX - 100, 300000), "Pending request not created");
+  check(pending.active(199) && pending.remaining(199) == 299700, "Pending request rollover failed");
+  check(!pending.active(199 + 300000) && !pending.canConsent(123, 199 + 300000), "Expired request accepted");
+  check(pending.canConsent(123, 199) && !pending.canConsent(124, 199), "Consent correlation failed");
+  FriendSync::PendingRequest observed, consent;
+  check(observed.observe(900, 1000, FriendSync::REQUEST_TTL_MS), "Initial request was not observed");
+  check(observed.observe(900, 241000), "Duplicate request was not accepted while pending");
+  check(observed.remaining(241000) == FriendSync::REQUEST_TTL_MS - 240000,
+        "Duplicate request incorrectly extended its deadline");
+  check(observed.grantConsent(900, 241000, consent) && consent.remaining(241000) == observed.remaining(241000),
+        "Consent did not preserve request expiry");
+  check(!observed.grantConsent(901, 241000, consent), "Wrong request nonce granted consent");
+  observed.clear(); check(!observed.active(241000), "Cleared request remained active");
+  FriendSync::PendingRequest sender, receiver, granted;
+  check(sender.set(501, UINT32_MAX - 50), "Sender request setup failed");
+  check(receiver.observe(501, 25), "Receiver failed to observe across rollover");
+  check(!receiver.canConsent(502, 25) && receiver.grantConsent(501, 25, granted),
+        "Consent correlation failed across device clocks");
+  check(!granted.canConsent(501, 25 + FriendSync::REQUEST_TTL_MS), "Consent survived exact expiry");
+  // Unfriending is sent immediately and stops after an acknowledgement or a
+  // finite retry budget, even when boards remain nearby indefinitely.
+  for (const uint32_t origin : {1000U, UINT32_MAX - 100}) {
+    FriendSync::RemovalNotice removal;
+    check(removal.start(601, origin) && removal.due(origin), "Removal was not ready immediately");
+    removal.sent(origin);
+    check(!removal.due(origin + FriendSync::RETRY_MS - 1), "Removal retried without backoff");
+    check(!removal.confirm(602, false, FriendSync::Ok), "Stale removal acknowledgement accepted");
+    check(!removal.confirm(601, true, FriendSync::Ok), "Peer still a friend acknowledged removal");
+    check(!removal.confirm(601, false, FriendSync::Busy), "Busy peer acknowledged removal");
+    check(removal.due(origin + FriendSync::RETRY_MS), "Failed removal could not retry");
+    check(removal.confirm(601, false, FriendSync::Ok), "Confirmed peer removal was ignored");
+    check(!removal.due(origin + FriendSync::RETRY_MS * 2), "Confirmed removal kept sending");
+    removal.start(603, origin);
+    for (uint8_t attempt = 0; attempt < FriendSync::RemovalNotice::MAX_ATTEMPTS; ++attempt) {
+      const uint32_t now = origin + FriendSync::RETRY_MS * attempt;
+      check(removal.due(now), "Removal retry budget ended early");
+      removal.sent(now);
+    }
+    check(!removal.due(origin + FriendSync::RETRY_MS * 10), "Removal retried indefinitely");
+    removal.start(604, origin);
+    check(!removal.due(origin + FriendSync::REQUEST_TTL_MS), "Expired removal was sent");
+    removal.clear();
+    check(!removal.confirm(604, false, FriendSync::Ok), "Cancelled removal accepted a late acknowledgement");
+  }
   // The two devices can have completely different boot times. Packet delay
   // and main-loop delay must not become an extra animation phase offset.
   const uint32_t offsets[] = {0, 1000000, uint32_t(-900000), UINT32_MAX - 100};
@@ -60,8 +136,6 @@ int main() {
   check(decide(13000, 1000, 2000, 6500, true, true, false) == HoldDecision::Expire,
         "Completed session stayed latched forever");
 
-  const uint8_t peer[6] = {1, 2, 3, 4, 5, 6};
-  const uint8_t other[6] = {1, 2, 3, 4, 5, 7};
   // The offer carries the coordinator's intent. Its advertisement may still
   // say NORMAL/ACK, or the request packet may have been missed altogether.
   check(offerDecision(false, true, false, true, peer, other, 500, 15000, -50, -80) == OfferDecision::Accept,
@@ -82,12 +156,14 @@ int main() {
     RequestGate gate;
     check(gate.canAttempt(origin), "Fresh press blocked");
     gate.attempted(origin);
+    check(!gate.exhausted(origin + 1), "Retry backoff treated as exhaustion");
     gate.sessionEnded(origin + 10, false, true, true, false);
     check(!gate.canAttempt(origin + 259), "Failed setup retried without backoff");
     check(gate.canAttempt(origin + 260), "Transient failure consumed the held gesture");
     gate.attempted(origin + 260);
     gate.sessionEnded(origin + 270, false, true, true, false);
     gate.attempted(origin + 520);
+    check(gate.exhausted(origin + 520), "Retry attempt limit was not exhausted");
     gate.sessionEnded(origin + 530, false, true, true, false);
     check(!gate.canAttempt(origin + 1000), "Retry attempt limit was ignored");
     gate.released();
@@ -115,6 +191,10 @@ int main() {
   check(!validCommand(offer, sizeof(offer)), "Oversized username accepted");
   offer[19] = 0; offer[18] = 2;
   check(!validCommand(offer, sizeof(offer)), "Invalid glyph marker accepted");
+  header(offer, WebOffer, 42, peer, 1234);
+  offer[18] = 0; offer[19] = 0;
+  check(validCommand(offer, sizeof(offer)) && read32(offer + 14) == 1234,
+        "Web friendship offer rejected");
   uint8_t status[HEADER_BYTES];
   header(status, Scheduled, 42, peer, 123456);
   check(matches(status, sizeof(status), 42, peer), "Session acknowledgement rejected");

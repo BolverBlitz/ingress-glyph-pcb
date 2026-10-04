@@ -18,11 +18,14 @@ constexpr uint32_t thermalPowerLimitForMilliC(int32_t temperatureMilliC) {
                          50UL;
 }
 
-static_assert(thermalPowerLimitForMilliC(50000) == 8000,
+static_assert(LED_THERMAL_SHUTDOWN_MC > LED_THERMAL_DERATE_START_MC,
+              "Thermal shutdown must be above the derating start");
+static_assert(thermalPowerLimitForMilliC(LED_THERMAL_DERATE_START_MC) == REV2_MAX_LED_POWER_MW,
               "Thermal derating must start at full power");
-static_assert(thermalPowerLimitForMilliC(60000) == 4000,
+static_assert(thermalPowerLimitForMilliC((LED_THERMAL_DERATE_START_MC + LED_THERMAL_SHUTDOWN_MC) / 2) ==
+                  (REV2_MAX_LED_POWER_MW / 2 / 50) * 50,
               "Thermal derating midpoint must be half power");
-static_assert(thermalPowerLimitForMilliC(70000) == 0,
+static_assert(thermalPowerLimitForMilliC(LED_THERMAL_SHUTDOWN_MC) == 0,
               "Thermal shutdown must remove LED power");
 
 class TemperatureController {

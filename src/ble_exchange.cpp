@@ -3,7 +3,7 @@
 
 namespace BleExchange {
 namespace {
-bool readIdentity(NimBLERemoteService *service, Identity &identity) {
+bool readIdentity(NimBLERemoteService *service, Identity &identity, bool readGlyph = true) {
   auto *name = service->getCharacteristic(USERNAME_UUID);
   auto *glyph = service->getCharacteristic(GLYPH_UUID);
   if (name && name->canRead()) {
@@ -14,6 +14,10 @@ bool readIdentity(NimBLERemoteService *service, Identity &identity) {
     }
     memcpy(identity.username, value.data(), length);
   }
+  // The username was read successfully, but identityValid historically means
+  // that a glyph snapshot is available. Keeping it false lets Friend Mode
+  // fetch the glyph later when rendering is enabled.
+  if (!readGlyph) return false;
   if (!glyph || !glyph->canRead()) return false;
   const auto value = glyph->readValue();
   if (value.size() < 4 || value.data()[0] != 'A' || value.data()[1] != 'G' || value.data()[2] != 1) return false;
@@ -22,6 +26,31 @@ bool readIdentity(NimBLERemoteService *service, Identity &identity) {
       (identity.hasGlyph && value.size() != 4 + sizeof(identity.glyph))) return false;
   if (identity.hasGlyph) memcpy(identity.glyph, value.data() + 4, sizeof(identity.glyph));
   return true;
+}
+bool exchangeFriendship(const Job &job, NimBLERemoteService *service, Result &result) {
+  if (!job.friendshipCommand) return true;
+  auto *remote = service->getCharacteristic(FRIENDSHIP_UUID);
+  if (!remote || !remote->canWrite() || !remote->canRead()) return false;
+  FriendSync::Packet packet;
+  packet.type = job.friendshipCommand; packet.nonce = job.requestId;
+  memcpy(packet.sender, job.ownId, 6);
+  const uint32_t spent = millis() - job.queuedMs;
+  packet.remainingMs = job.requestRemainingMs > spent ? job.requestRemainingMs - spent : 0;
+  packet.friendFlag = job.friendFlag;
+  uint8_t bytes[FriendSync::PACKET_BYTES]; FriendSync::encode(bytes, packet);
+  if (!remote->writeValue(bytes, sizeof(bytes), true)) return false;
+  const uint32_t deadline = millis() + 1000;
+  while (static_cast<int32_t>(millis() - deadline) < 0) {
+    const auto value = remote->readValue(); FriendSync::Packet response;
+    if (FriendSync::decode(value.data(), value.size(), response) &&
+        FriendSync::validResponse(response, job.requestId, job.peer)) {
+      result.friendshipValid = true; result.remoteFriend = response.friendFlag;
+      result.friendshipResult = response.result; result.friendshipCommand = job.friendshipCommand;
+      result.requestId = job.requestId; return true;
+    }
+    vTaskDelay(pdMS_TO_TICKS(20));
+  }
+  return false;
 }
 }
 
@@ -92,7 +121,8 @@ bool Worker::pair(const Job &job, NimBLERemoteService *service, Result &result,
   if (!status || !status->canRead() || !command || !command->canWrite() || !current(job)) return false;
 
   uint8_t offer[OFFER_BYTES] = {};
-  header(offer, Offer, job.session, job.ownId);
+  header(offer, job.webRequestId ? WebOffer : Offer, job.session, job.ownId,
+         job.webRequestId);
   offer[18] = job.own.hasGlyph;
   offer[19] = strlen(job.own.username);
   memcpy(offer + 20, job.own.username, NAME_BYTES);
@@ -101,7 +131,7 @@ bool Worker::pair(const Job &job, NimBLERemoteService *service, Result &result,
       !waitForPhase(job, status, Ready, millis() + 2000)) return false;
   // READY freezes the peer's identity until the session ends. Read it after
   // the offer so both sides animate the same snapshots, even during UI edits.
-  result.identityValid = readIdentity(service, result.remote);
+  result.identityValid = readIdentity(service, result.remote, job.readGlyph);
   if (!result.identityValid || !current(job)) return false;
 
   // Use the lowest RTT of three samples to reduce BLE scheduling asymmetry.
@@ -150,7 +180,10 @@ void Worker::run(const Job &job) {
     auto *service = client->getService(SERVICE_UUID);
     if (service && current(job)) {
       if (job.pairing) completed = pair(job, service, result, command);
-      else result.identityValid = readIdentity(service, result.remote);
+      else {
+        exchangeFriendship(job, service, result);
+        result.identityValid = readIdentity(service, result.remote, job.readGlyph);
+      }
     }
     if (job.pairing && !completed && command) {
       // Best effort even after the main task invalidated this job.
@@ -180,10 +213,17 @@ void Server::publish(uint8_t phase, uint32_t session, const uint8_t ownId[6]) {
   FriendProtocol::header(status_, phase, session, ownId);
   portEXIT_CRITICAL(&mutex_);
 }
+void Server::publishFriendship(const uint8_t bytes[FriendSync::PACKET_BYTES]) {
+  portENTER_CRITICAL(&mutex_); memcpy(friendship_, bytes, FriendSync::PACKET_BYTES); portEXIT_CRITICAL(&mutex_);
+}
 bool Server::receive(Incoming &incoming) {
   return incoming_ && xQueueReceive(incoming_, &incoming, 0) == pdTRUE;
 }
 void Server::onRead(NimBLECharacteristic *characteristic, NimBLEConnInfo &) {
+  if (strcmp(characteristic->getUUID().toString().c_str(), FRIENDSHIP_UUID) == 0) {
+    uint8_t bytes[FriendSync::PACKET_BYTES]; portENTER_CRITICAL(&mutex_); memcpy(bytes, friendship_, sizeof(bytes)); portEXIT_CRITICAL(&mutex_);
+    characteristic->setValue(bytes, sizeof(bytes)); return;
+  }
   uint8_t bytes[FriendProtocol::HEADER_BYTES];
   portENTER_CRITICAL(&mutex_);
   memcpy(bytes, status_, sizeof(bytes));
@@ -193,10 +233,20 @@ void Server::onRead(NimBLECharacteristic *characteristic, NimBLEConnInfo &) {
 }
 void Server::onWrite(NimBLECharacteristic *characteristic, NimBLEConnInfo &connection) {
   const auto value = characteristic->getValue();
-  if (!incoming_ || !FriendProtocol::validCommand(value.data(), value.size())) return;
+  if (!incoming_) return;
+  const bool friendship = strcmp(characteristic->getUUID().toString().c_str(), FRIENDSHIP_UUID) == 0;
+  FriendSync::Packet sync;
+  if (friendship) { if (!FriendSync::decode(value.data(), value.size(), sync)) return; }
+  else if (!FriendProtocol::validCommand(value.data(), value.size())) return;
   Incoming incoming;
   incoming.size = value.size();
   incoming.receivedMs = millis();
+  incoming.friendship = friendship;
+  if (friendship) {
+    // A response belongs to one command. Clear the previous response before
+    // queueing this command so a rapid retry cannot consume stale state.
+    portENTER_CRITICAL(&mutex_); memset(friendship_, 0, sizeof(friendship_)); portEXIT_CRITICAL(&mutex_);
+  }
   memcpy(incoming.bytes, value.data(), value.size());
   const auto address = connection.getAddress().toString();
   memcpy(incoming.address, address.c_str(), min<size_t>(address.size(), sizeof(incoming.address) - 1));

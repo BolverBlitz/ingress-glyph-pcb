@@ -48,6 +48,11 @@ constexpr uint8_t AGENT_GLYPH_VERSION = 1;
 constexpr size_t AGENT_GLYPH_HEADER_BYTES = 4;
 constexpr size_t AGENT_GLYPH_BYTES = AGENT_GLYPH_HEADER_BYTES + sizeof(Rgbw) * LED_COUNT;
 constexpr uint32_t NAME_RETRY_MS = 60UL * 1000UL;
+uint32_t newRequestId() {
+  uint32_t id;
+  do { id = esp_random(); } while (!id);
+  return id;
+}
 static_assert(REMOTE_USERNAME_MAX_BYTES == FriendProtocol::NAME_BYTES,
               "Pairing username size needs a protocol version change");
 
@@ -123,6 +128,7 @@ void ProximityManager::setEnabled(bool enabled) {
     startBle();
   } else {
     cancelFriendPairing();
+    for (NearbyEntry &entry : nearby_) clearFriendRequests(entry);
     worker_.cancel();
     stopBle();
     WiFi.setSleep(false);
@@ -142,8 +148,8 @@ void ProximityManager::setLocalEmergency(bool emergency) {
 }
 
 void ProximityManager::setLocalFriendRequest(bool active) {
+  if (!active && localFriendRequest_) pairingRequestGate_.released();
   localFriendRequest_ = active;
-  if (!active) pairingRequestGate_.released();
   localMessage_ = localEmergency_ ? MESSAGE_EMERGENCY
                                   : (localFriendRequest_
                                          ? MESSAGE_FRIEND_REQUEST
@@ -175,8 +181,12 @@ void ProximityManager::startBle() {
   auto *command = service->createCharacteristic(
       BleExchange::COMMAND_UUID, NIMBLE_PROPERTY::WRITE,
       FriendProtocol::OFFER_BYTES);
+  auto *friendship = service->createCharacteristic(
+      BleExchange::FRIENDSHIP_UUID, NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::WRITE,
+      FriendSync::PACKET_BYTES);
   status->setCallbacks(&pairingServer_);
   command->setCallbacks(&pairingServer_);
+  friendship->setCallbacks(&pairingServer_);
   advertisedUsername_ = globalSettings.username;
   usernameCharacteristic_->setValue(advertisedUsername_.c_str());
   refreshAgentGlyph();
@@ -287,6 +297,7 @@ void ProximityManager::processObservation(const Observation &observation) {
       entry->firstSeenUnix = utcNow();
       entry->firstLogged = appendEncounter(entry->userId, false,
                                            entry->firstSeenUnix);
+      entry->friendSyncPending = entry->firstLogged && entry->friendFlag;
     }
   }
   entry->lastSeenMs = observation.receivedMs;
@@ -392,18 +403,33 @@ void ProximityManager::loop() {
     processObservation(observation);
   }
   expireNearby();
+  expireFriendRequests();
   processPairingCommands();
   loopFriendPairing();
   // Pairing takes priority over optional background discovery. Both username and glyph are obtained in one connection without blocking LED rendering.
-  if (!workerBusy_ && !localFriendRequest_ && !pairingSession_) {
+  if (!workerBusy_ && !localFriendRequest_ && !pairingSession_ &&
+      FriendProtocol::reached(millis(), backgroundResumeMs_)) {
     const uint32_t now = millis();
-    for (NearbyEntry &entry : nearby_) {
+    for (uint8_t offset = 0; offset < MAX_NEARBY; ++offset) {
+      const uint8_t index = (backgroundCursor_ + offset) % MAX_NEARBY;
+      NearbyEntry &entry = nearby_[index];
       if (!entry.used || now - entry.lastSeenMs >= FRIEND_PRESENT_TIMEOUT_MS) continue;
       const bool needName = entry.username.isEmpty() &&
           (!entry.lastNameAttemptMs || now - entry.lastNameAttemptMs >= NAME_RETRY_MS);
       const bool needGlyph = globalSettings.friendModeEnabled && entry.friendFlag && !entry.glyphFetched &&
           (!entry.lastGlyphAttemptMs || now - entry.lastGlyphAttemptMs >= FRIEND_GLYPH_RETRY_MS);
-      if ((needName || needGlyph) && queueExchange(entry, false)) break;
+      const bool requestDue = !entry.lastRequestAttemptMs ||
+          now - entry.lastRequestAttemptMs >= FriendSync::RETRY_MS;
+      uint8_t command = 0;
+      if (entry.removalNotice.due(now)) command = FriendSync::Sync;
+      else if (requestDue && entry.cancelRequestId) command = FriendSync::Cancel;
+      else if (requestDue && entry.acceptPending && entry.incomingRequest.active(now)) command = FriendSync::Accept;
+      else if (requestDue && entry.outgoingRequest.active(now) && !entry.webConsent.active(now)) command = FriendSync::Request;
+      else if (entry.friendFlag && entry.friendSyncPending) command = FriendSync::Sync;
+      if ((command || needName || needGlyph) && queueExchange(entry, false, command)) {
+        backgroundCursor_ = (index + 1) % MAX_NEARBY;
+        break;
+      }
     }
   }
   refreshIdentity();
@@ -435,6 +461,7 @@ void ProximityManager::onTimeSynchronized() {
     if (!entry.used || entry.firstLogged) continue;
     entry.firstSeenUnix = now;
     entry.firstLogged = appendEncounter(entry.userId, false, now);
+    entry.friendSyncPending = entry.firstLogged && entry.friendFlag;
   }
 }
 
@@ -453,12 +480,91 @@ bool ProximityManager::setFriend(uint16_t userId, bool friendFlag) {
   user.friendFlag = friendFlag;
   if (!updateKnownUser(user)) return false;
   for (NearbyEntry &entry : nearby_) {
-    if (entry.used && entry.userId == userId) entry.friendFlag = friendFlag;
+    if (entry.used && entry.userId == userId) {
+      entry.friendFlag = friendFlag;
+      entry.friendSyncPending = false;
+      if (!friendFlag) {
+        if (pairingSession_ && memcmp(pairingPeer_, entry.deviceId, 6) == 0) cancelFriendPairing();
+        clearFriendRequests(entry);
+        entry.removalNotice.clear();
+        memset(entry.glyph, 0, sizeof(entry.glyph));
+        entry.glyphFetched = entry.glyphLoaded = false;
+      }
+    }
   }
   return true;
 }
 
-bool ProximityManager::queueExchange(NearbyEntry &entry, bool pairing) {
+void ProximityManager::clearFriendRequests(NearbyEntry &entry) {
+  entry.outgoingRequest.clear();
+  entry.incomingRequest.clear();
+  entry.webConsent.clear();
+  entry.acceptPending = false;
+  entry.cancelRequestId = 0;
+  entry.lastRequestAttemptMs = 0;
+}
+
+void ProximityManager::expireFriendRequests() {
+  const uint32_t now = millis();
+  for (NearbyEntry &entry : nearby_) {
+    if (!entry.used) continue;
+    if (!entry.removalNotice.pending.active(now)) entry.removalNotice.clear();
+    if (!entry.outgoingRequest.active(now)) entry.outgoingRequest.clear();
+    if (!entry.incomingRequest.active(now)) {
+      if (entry.incomingRequest.id) entry.closedRequestId = entry.incomingRequest.id;
+      entry.incomingRequest.clear();
+      entry.acceptPending = false;
+    }
+    if (!entry.webConsent.active(now)) entry.webConsent.clear();
+    if (entry.cancelRequestId && now - entry.cancelRequestMs >= FriendSync::REQUEST_TTL_MS)
+      entry.cancelRequestId = 0;
+  }
+}
+
+const char *ProximityManager::friendshipAction(uint16_t userId, const String &action) {
+  KnownUser user;
+  if (!userId || !findKnownUserById(userId, user)) return "Agent not found";
+  NearbyEntry *entry = findNearby(user.deviceId);
+  const uint32_t now = millis();
+  if (action == "remove") {
+    if (!setFriend(userId, false)) return "Could not save friendship";
+    if (enabled_ && entry && now - entry->lastSeenMs < FRIEND_PRESENT_TIMEOUT_MS)
+      entry->removalNotice.start(newRequestId(), now);
+    return nullptr;
+  }
+  if (action == "cancel" && entry) {
+    const uint32_t id = entry->outgoingRequest.active(now) ? entry->outgoingRequest.id :
+        (entry->incomingRequest.active(now) ? entry->incomingRequest.id : entry->webConsent.id);
+    if (!id) return "No pending request";
+    if (pairingSession_ && memcmp(pairingPeer_, entry->deviceId, 6) == 0) cancelFriendPairing();
+    clearFriendRequests(*entry);
+    entry->cancelRequestId = id;
+    entry->cancelRequestMs = now;
+    entry->closedRequestId = id;
+    return nullptr;
+  }
+  if (action != "request" && action != "accept") return "Invalid friendship action";
+  if (!enabled_ || !entry || now - entry->lastSeenMs >= FRIEND_PRESENT_TIMEOUT_MS)
+    return "Agent must be nearby with Bluetooth enabled";
+  if (localEmergency_ || remoteEmergencyActive() || pairingSession_ || localFriendRequest_)
+    return "Friend pairing is busy";
+  if (entry->friendFlag) return "Agent is already a friend";
+  if (action == "request") {
+    if (entry->outgoingRequest.active(now) || entry->incomingRequest.active(now) ||
+        entry->webConsent.active(now)) return "A friendship request is already pending";
+    entry->cancelRequestId = 0;
+    entry->removalNotice.clear();
+    entry->outgoingRequest.set(newRequestId(), now);
+  } else {
+    if (!entry->incomingRequest.active(now)) return "Friendship request has expired";
+    entry->acceptPending = true;
+  }
+  entry->lastRequestAttemptMs = 0;
+  return nullptr;
+}
+
+bool ProximityManager::queueExchange(NearbyEntry &entry, bool pairing,
+                                     uint8_t friendshipCommand) {
   if (!workerReady_ || workerBusy_ || !client_ || entry.address.isEmpty()) return false;
   BleExchange::Job job;
   job.client = client_;
@@ -469,6 +575,21 @@ bool ProximityManager::queueExchange(NearbyEntry &entry, bool pairing) {
   job.session = pairing ? pairingSession_ : 0;
   memcpy(job.ownId, ownDeviceId_, 6);
   job.own = pairingOwn_;
+  job.webRequestId = pairing ? pairingWebRequestId_ : 0;
+  job.readGlyph = pairing || (globalSettings.friendModeEnabled && entry.friendFlag && !entry.glyphFetched);
+  job.friendshipCommand = friendshipCommand;
+  job.friendFlag = entry.friendFlag;
+  job.queuedMs = millis();
+  if (friendshipCommand == FriendSync::Request) {
+    job.requestId = entry.outgoingRequest.id;
+    job.requestRemainingMs = entry.outgoingRequest.remaining(millis());
+  } else if (friendshipCommand == FriendSync::Accept) {
+    job.requestId = entry.incomingRequest.id;
+  } else if (friendshipCommand == FriendSync::Cancel) {
+    job.requestId = entry.cancelRequestId;
+  } else if (friendshipCommand == FriendSync::Sync) {
+    job.requestId = entry.removalNotice.due(millis()) ? entry.removalNotice.pending.id : newRequestId();
+  }
   if (scan_) scan_->stop();
   if (!worker_.submit(job)) {
     scanRestartNeeded_ = true;
@@ -476,6 +597,11 @@ bool ProximityManager::queueExchange(NearbyEntry &entry, bool pairing) {
   }
   workerBusy_ = true;
   entry.lastNameAttemptMs = entry.lastGlyphAttemptMs = millis();
+  if (friendshipCommand == FriendSync::Sync) {
+    entry.friendSyncPending = false;
+    if (job.requestId == entry.removalNotice.pending.id) entry.removalNotice.sent(millis());
+  }
+  else if (friendshipCommand) entry.lastRequestAttemptMs = millis();
   return true;
 }
 
@@ -513,8 +639,19 @@ void ProximityManager::cancelFriendPairing(bool retryPreparation) {
         FriendProtocol::reached(now, pairingStartMs_);
     pairingRequestGate_.sessionEnded(now, pairingCompleted_, localFriendRequest_,
                                      retryPreparation, animationStarted);
+    if (pairingWebRequestId_) {
+      pairingRequestGate_.sessionEnded(now, pairingCompleted_, true,
+                                       retryPreparation, animationStarted);
+      if (auto *entry = findNearby(pairingPeer_)) {
+        if (pairingCompleted_ || !retryPreparation || animationStarted) {
+          entry->closedRequestId = pairingWebRequestId_;
+          clearFriendRequests(*entry);
+        }
+      }
+    }
   }
   pairingSession_ = 0;
+  pairingWebRequestId_ = 0;
   pairingScheduled_ = pairingCompleted_ = pairingDelivered_ = false;
   pairingOwn_ = BleExchange::Identity{};
   pairingRemote_ = BleExchange::Identity{};
@@ -527,11 +664,47 @@ void ProximityManager::processExchangeResults() {
     if (result.finished) {
       workerBusy_ = false;
       scanRestartNeeded_ = true;
+      // Leave time to observe fresh advertisements between background reads.
+      backgroundResumeMs_ = millis() + BLE_ADVERTISING_INTERVAL_MS + 100;
     }
     if (!enabled_ || result.generation != worker_.generation()) continue;
     NearbyEntry *entry = findNearby(result.peer);
     if (!result.session) {
-      if (entry) applyIdentity(*entry, result.remote, result.identityValid);
+      if (!entry) continue;
+      applyIdentity(*entry, result.remote, result.identityValid);
+      if (!result.friendshipValid) continue;
+      const uint32_t now = millis();
+      if (result.friendshipCommand == FriendSync::Sync)
+        entry->removalNotice.confirm(result.requestId, result.remoteFriend, result.friendshipResult);
+      if (result.friendshipCommand == FriendSync::Sync &&
+          result.friendshipResult == FriendSync::Ok && !result.remoteFriend && entry->friendFlag) {
+        if (!pairingSession_ || memcmp(pairingPeer_, entry->deviceId, 6) != 0) setFriend(entry->userId, false);
+      } else if (result.friendshipCommand == FriendSync::Request &&
+                 entry->outgoingRequest.canConsent(result.requestId, now)) {
+        if (result.friendshipResult == FriendSync::Rejected) {
+          entry->closedRequestId = result.requestId;
+          entry->outgoingRequest.clear();
+        }
+        // An accepted request is still the sender's original consent.
+        else if (result.friendshipResult == FriendSync::Accepted) {
+          entry->outgoingRequest.grantConsent(result.requestId, now, entry->webConsent);
+          pairingRequestGate_.released();
+        }
+      } else if (result.friendshipCommand == FriendSync::Accept && entry->acceptPending &&
+                 entry->incomingRequest.canConsent(result.requestId, now)) {
+        if (result.friendshipResult == FriendSync::Accepted) {
+          entry->incomingRequest.grantConsent(result.requestId, now, entry->webConsent);
+          entry->acceptPending = false;
+          pairingRequestGate_.released();
+        } else if (result.friendshipResult == FriendSync::Rejected) {
+          entry->closedRequestId = result.requestId;
+          entry->incomingRequest.clear();
+          entry->acceptPending = false;
+        }
+      } else if (result.friendshipCommand == FriendSync::Cancel &&
+                 entry->cancelRequestId == result.requestId && result.friendshipResult == FriendSync::Ok) {
+        entry->cancelRequestId = 0;
+      }
       continue;
     }
     if (result.session != pairingSession_ || memcmp(result.peer, pairingPeer_, 6) != 0) continue;
@@ -552,6 +725,62 @@ void ProximityManager::processExchangeResults() {
   }
 }
 
+void ProximityManager::processFriendshipCommand(const BleExchange::Incoming &incoming,
+                                               NearbyEntry &entry) {
+  FriendSync::Packet request;
+  if (!FriendSync::decode(incoming.bytes, incoming.size, request) || request.type == FriendSync::Response) return;
+  if (memcmp(request.sender, entry.deviceId, 6) != 0) return;
+  const uint32_t now = millis();
+  const uint32_t queued = now - incoming.receivedMs;
+  request.remainingMs = request.remainingMs > queued ? request.remainingMs - queued : 0;
+  uint8_t result = FriendSync::Rejected;
+  const bool sameSession = pairingSession_ && memcmp(pairingPeer_, entry.deviceId, 6) == 0;
+  const bool busy = pairingSession_ || localFriendRequest_ || localEmergency_ || remoteEmergencyActive();
+  if (request.type == FriendSync::Sync) {
+    if (!request.friendFlag && entry.friendFlag) {
+      if (setFriend(entry.userId, false)) result = FriendSync::Ok;
+    } else if (sameSession) result = FriendSync::Busy;
+    else result = FriendSync::Ok;
+    // A successful inbound check also verifies this visit's friendship.
+    if (result == FriendSync::Ok) entry.friendSyncPending = false;
+  } else if (request.type == FriendSync::Request) {
+    if (entry.webConsent.canConsent(request.nonce, now)) result = FriendSync::Accepted;
+    else if (entry.closedRequestId == request.nonce || !request.remainingMs) result = FriendSync::Rejected;
+    else if (busy || (entry.incomingRequest.active(now) && entry.incomingRequest.id != request.nonce)) result = FriendSync::Busy;
+    else if (entry.outgoingRequest.active(now) && memcmp(ownDeviceId_, entry.deviceId, 6) < 0) result = FriendSync::Rejected;
+    else {
+      // Crossed requests converge on the request sent by the lower device ID.
+      entry.outgoingRequest.clear();
+      if (!entry.incomingRequest.canConsent(request.nonce, now)) {
+        if (entry.friendFlag && !setFriend(entry.userId, false)) result = FriendSync::Busy;
+        else {
+          entry.incomingRequest.observe(request.nonce, now, request.remainingMs);
+          result = FriendSync::Pending;
+        }
+      } else result = FriendSync::Pending; // Retries never extend the deadline.
+    }
+  } else if (request.type == FriendSync::Accept) {
+    if (entry.webConsent.canConsent(request.nonce, now)) result = FriendSync::Accepted;
+    else if (busy) result = FriendSync::Busy;
+    else if (entry.outgoingRequest.canConsent(request.nonce, now)) {
+      entry.outgoingRequest.grantConsent(request.nonce, now, entry.webConsent);
+      pairingRequestGate_.released();
+      result = FriendSync::Accepted;
+    }
+  } else if (request.type == FriendSync::Cancel) {
+    if (entry.outgoingRequest.id == request.nonce || entry.incomingRequest.id == request.nonce ||
+        entry.webConsent.id == request.nonce) {
+      if (sameSession && !pairingCompleted_) cancelFriendPairing();
+      clearFriendRequests(entry);
+    }
+    entry.closedRequestId = request.nonce;
+    result = FriendSync::Ok;
+  }
+  uint8_t response[FriendSync::PACKET_BYTES];
+  FriendSync::packet(response, FriendSync::Response, request.nonce, ownDeviceId_, 0, entry.friendFlag, result);
+  pairingServer_.publishFriendship(response);
+}
+
 void ProximityManager::processPairingCommands() {
   using namespace FriendProtocol;
   BleExchange::Incoming incoming;
@@ -560,14 +789,21 @@ void ProximityManager::processPairingCommands() {
     const uint8_t *bytes = incoming.bytes;
     NearbyEntry *entry = findNearby(bytes + 8);
     if (!entry || !entry->address.equalsIgnoreCase(incoming.address)) continue;
+    if (incoming.friendship) {
+      processFriendshipCommand(incoming, *entry);
+      continue;
+    }
     const uint32_t session = read32(bytes + 4);
-    if (bytes[3] == Offer) {
+    if (bytes[3] == Offer || bytes[3] == WebOffer) {
+      const bool web = bytes[3] == WebOffer;
+      const uint32_t requestId = web ? read32(bytes + 14) : 0;
+      const bool consent = web ? entry->webConsent.canConsent(requestId, millis()) : localFriendRequest_;
       // A fresh eligible gesture after the success animation may replace the
       // retained completion status; the ACK retention is not a UI cooldown.
       if (pairingCompleted_ && localFriendRequest_) cancelFriendPairing();
       const uint32_t now = millis();
       const OfferDecision decision = offerDecision(pairingSession_ != 0,
-          localFriendRequest_, localEmergency_ || remoteEmergencyActive(),
+          consent, localEmergency_ || remoteEmergencyActive(),
           pairingRequestGate_.canAttempt(now), entry->deviceId, ownDeviceId_,
           now - entry->lastSeenMs, FRIEND_PRESENT_TIMEOUT_MS, entry->rssi,
           FRIEND_PAIRING_MIN_RSSI_DBM);
@@ -579,6 +815,7 @@ void ProximityManager::processPairingCommands() {
       // A background read may be finishing, but never start a second client.
       worker_.cancel();
       pairingSession_ = session;
+      pairingWebRequestId_ = requestId;
       memcpy(pairingPeer_, entry->deviceId, 6);
       pairingCoordinator_ = false;
       pairingPreparedMs_ = incoming.receivedMs;
@@ -603,7 +840,7 @@ void ProximityManager::processPairingCommands() {
       if (!pairingCompleted_) cancelFriendPairing(true);
     } else if (bytes[3] == Start && !pairingScheduled_) {
       const uint32_t start = read32(bytes + 14);
-      if (!localFriendRequest_ || localEmergency_ || !validStart(millis(), start)) {
+      if ((!localFriendRequest_ && !pairingWebRequestId_) || localEmergency_ || !validStart(millis(), start)) {
         cancelFriendPairing(true);
         continue;
       }
@@ -623,12 +860,12 @@ void ProximityManager::loopFriendPairing() {
   if (pairingCompleted_ && localFriendRequest_) cancelFriendPairing();
   if (pairingSession_) {
     const HoldDecision decision = holdDecision(now, pairingPreparedMs_, pairingStartMs_,
-        pairingContactMs_, pairingScheduled_, pairingCompleted_, localFriendRequest_,
+        pairingContactMs_, pairingScheduled_, pairingCompleted_, localFriendRequest_ || pairingWebRequestId_,
         localEmergency_ || remoteEmergencyActive(), FRIEND_PAIRING_EXCHANGE_TIMEOUT_MS,
         FRIEND_PAIRING_HOLD_MS, FRIEND_PAIRING_ACK_MS);
     if (decision == HoldDecision::Cancel || decision == HoldDecision::Expire) {
       const bool retry = decision == HoldDecision::Cancel &&
-          localFriendRequest_ && !localEmergency_ && !remoteEmergencyActive();
+          (localFriendRequest_ || pairingWebRequestId_) && !localEmergency_ && !remoteEmergencyActive();
       cancelFriendPairing(retry);
       return;
     }
@@ -649,21 +886,42 @@ void ProximityManager::loopFriendPairing() {
         return;
       }
       entry->friendFlag = true;
+      entry->friendSyncPending = false;
+      entry->removalNotice.clear();
+      entry->closedRequestId = pairingWebRequestId_ ? pairingWebRequestId_ :
+          (entry->incomingRequest.id ? entry->incomingRequest.id : entry->outgoingRequest.id);
+      clearFriendRequests(*entry);
       applyIdentity(*entry, pairingRemote_, true, false);
       pairingCompleted_ = true;
       friendPairingAckUntilMs_ = now + FRIEND_PAIRING_ACK_MS;
     }
     return;
   }
-  if (!localFriendRequest_ || localEmergency_ || remoteEmergencyActive() ||
+  NearbyEntry *webPeer = nullptr;
+  for (NearbyEntry &entry : nearby_) {
+    if (entry.used && entry.webConsent.active(now) &&
+        now - entry.lastSeenMs < FRIEND_PRESENT_TIMEOUT_MS &&
+        entry.rssi >= FRIEND_PAIRING_MIN_RSSI_DBM) {
+      webPeer = &entry;
+      break;
+    }
+  }
+  if (webPeer && pairingRequestGate_.exhausted(now)) {
+    const uint32_t id = webPeer->webConsent.id;
+    clearFriendRequests(*webPeer);
+    webPeer->closedRequestId = webPeer->cancelRequestId = id;
+    webPeer->cancelRequestMs = now;
+    webPeer = nullptr;
+  }
+  if ((!localFriendRequest_ && !webPeer) || localEmergency_ || remoteEmergencyActive() ||
       !pairingRequestGate_.canAttempt(now)) return;
   if (workerBusy_) {
     worker_.cancel();  // Let a pending background read finish before pairing.
     return;
   }
   // Lowest ID wins; nearest eligible peer wins when several people request.
-  NearbyEntry *peer = nullptr;
-  for (NearbyEntry &entry : nearby_) {
+  NearbyEntry *peer = webPeer;
+  if (!peer) for (NearbyEntry &entry : nearby_) {
     if (!entry.used || entry.message != MESSAGE_FRIEND_REQUEST ||
         now - entry.lastSeenMs >= FRIEND_PRESENT_TIMEOUT_MS ||
         entry.rssi < FRIEND_PAIRING_MIN_RSSI_DBM) continue;
@@ -673,6 +931,7 @@ void ProximityManager::loopFriendPairing() {
   if (!peer || memcmp(ownDeviceId_, peer->deviceId, 6) >= 0) return;
   do { pairingSession_ = esp_random(); } while (!pairingSession_);
   memcpy(pairingPeer_, peer->deviceId, 6);
+  pairingWebRequestId_ = webPeer ? webPeer->webConsent.id : 0;
   pairingCoordinator_ = true;
   pairingPreparedMs_ = now;
   pairingRequestGate_.attempted(now);
@@ -739,6 +998,15 @@ void ProximityManager::writeNearby(JsonArray array) const {
       item["username"] = entry.username;
       item["faction"] = entry.faction;
       item["friend"] = entry.friendFlag;
+      const uint32_t now = millis();
+      const bool pairing = pairingSession_ && memcmp(pairingPeer_, entry.deviceId, 6) == 0;
+      item["nearby"] = enabled_ && now - entry.lastSeenMs < FRIEND_PRESENT_TIMEOUT_MS;
+      item["friendRequest"] = pairing || entry.webConsent.active(now) || entry.acceptPending ? "pairing" :
+          (entry.incomingRequest.active(now) ? "incoming" :
+          (entry.outgoingRequest.active(now) ? "outgoing" : ""));
+      const uint32_t remaining = entry.incomingRequest.active(now) ? entry.incomingRequest.remaining(now) :
+          entry.outgoingRequest.remaining(now);
+      item["requestExpiresIn"] = (remaining + 999U) / 1000U;
       item["emergency"] = entry.emergency;
       item["rssi"] = entry.rssi;
       item["firstSeen"] = entry.firstSeenUnix;

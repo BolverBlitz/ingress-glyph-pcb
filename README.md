@@ -27,6 +27,16 @@ seconds.
   finishes: add each other as friends and exchange the Draw page whose name
   exactly matches each Agent username. Connection setup happens before the
   rainbow starts, so total button-hold time can be longer than five seconds.
+- On the Nearby page, send a Friendship Request instead. Requests expire after
+  five minutes; the other board can accept while nearby, after which both boards
+  run the normal five-second rainbow pairing animation. Pending requests can be
+  cancelled and existing friends can be removed. Friendship is checked once when
+  a new visit is recorded, regardless of Friend Mode. Removing a friend on one
+  board notifies the other board immediately when nearby; if it is offline, the
+  removal is reconciled at the next recorded visit. A nearby entry expires after 10 minutes without seeing the board,
+  allowing a later visit to rediscover the board. Requests and nearby state
+  are volatile and bounded to 32 entries; an unavailable board or older firmware
+  does not delete a friend record. Physical Button 2 pairing remains supported.
 - Hold both buttons for 10 seconds: enter Emergency mode, pulse white SOS, and
   broadcast the Emergency message to nearby devices.
 - In Emergency mode, hold both buttons for 2 seconds: disable Emergency mode.
