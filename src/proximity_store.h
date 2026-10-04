@@ -31,7 +31,9 @@ bool appendEncounter(uint16_t userId, bool last, uint32_t timestamp);
 UserHistory readUserHistory(uint16_t userId, uint32_t activeSince = 0, uint32_t activeNow = 0);
 void readUserHistories(const uint16_t *userIds, UserHistory *histories,
                        const uint32_t *activeSince, size_t count,
-                       uint32_t activeNow);
+                       uint32_t activeNow,
+                       const uint32_t *activeElapsedSeconds = nullptr);
+uint32_t latestEncounterTimestamp();
 size_t proximityUsersBytes();
 size_t proximityEncountersBytes();
 bool resetProximityStore();

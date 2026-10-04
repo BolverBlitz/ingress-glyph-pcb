@@ -3,6 +3,7 @@
 #include <LittleFS.h>
 
 #include "config.h"
+#include "encounter_timing.h"
 
 namespace {
 constexpr char USERS_FILE[] = "/ble-users.bin";
@@ -205,21 +206,8 @@ void streamEncounterRecords(Callback callback) {
 
 void applyEncounter(UserHistory &history, uint32_t &openSince, const EncounterRecordDisk &record) {
   const bool last = (record.userAndType & ENCOUNTER_LAST_BIT) != 0;
-  history.lastSeen = max(history.lastSeen, record.timestamp);
-  if (!last) {
-    // A reboot can leave an encounter open and create another FIRST after
-    // startup. Preserve that previous interval instead of silently replacing
-    // it. A long unobserved gap is capped to the same ten-minute timeout that
-    // normally produces a LAST record while the controller is running.
-    if (openSince && record.timestamp >= openSince) {
-      history.totalSeconds += min<uint32_t>(
-          record.timestamp - openSince, NEARBY_EXPIRY_MS / 1000UL);
-    }
-    openSince = record.timestamp;
-  } else if (openSince && record.timestamp >= openSince) {
-    history.totalSeconds += record.timestamp - openSince;
-    openSince = 0;
-  }
+  EncounterTiming::applyRecord(history.lastSeen, history.totalSeconds, openSince,
+                              last, record.timestamp, NEARBY_EXPIRY_MS / 1000UL);
 }
 }  // namespace
 
@@ -351,16 +339,16 @@ UserHistory readUserHistory(uint16_t userId, uint32_t activeSince, uint32_t acti
   if (activeSince && activeNow >= activeSince) {
     history.totalSeconds += activeNow - activeSince;
     history.lastSeen = max(history.lastSeen, activeNow);
-  } else if (openSince && activeNow >= openSince) {
-    history.totalSeconds +=
-        min<uint32_t>(activeNow - openSince, NEARBY_EXPIRY_MS / 1000UL);
+  } else if (openSince && activeNow) {
+    history.totalSeconds += EncounterTiming::interruptedSeconds(
+        openSince, activeNow, NEARBY_EXPIRY_MS / 1000UL);
   }
   return history;
 }
 
 void readUserHistories(const uint16_t *userIds, UserHistory *histories,
                        const uint32_t *activeSince, size_t count,
-                       uint32_t activeNow) {
+                       uint32_t activeNow, const uint32_t *activeElapsedSeconds) {
   if (!userIds || !histories || !count) return;
   count = min<size_t>(count, 100);
   uint32_t openSince[100] = {};
@@ -378,14 +366,25 @@ void readUserHistories(const uint16_t *userIds, UserHistory *histories,
     }
   });
   for (size_t i = 0; i < count; ++i) {
-    if (activeSince && activeSince[i] && activeNow >= activeSince[i]) {
-      histories[i].totalSeconds += activeNow - activeSince[i];
+    if (activeSince && activeSince[i] &&
+        (activeElapsedSeconds || activeNow >= activeSince[i])) {
+      histories[i].totalSeconds += activeElapsedSeconds
+                                      ? activeElapsedSeconds[i]
+                                      : activeNow - activeSince[i];
       histories[i].lastSeen = max(histories[i].lastSeen, activeNow);
-    } else if (openSince[i] && activeNow >= openSince[i]) {
-      histories[i].totalSeconds += min<uint32_t>(
-          activeNow - openSince[i], NEARBY_EXPIRY_MS / 1000UL);
+    } else if (openSince[i] && activeNow) {
+      histories[i].totalSeconds += EncounterTiming::interruptedSeconds(
+          openSince[i], activeNow, NEARBY_EXPIRY_MS / 1000UL);
     }
   }
+}
+
+uint32_t latestEncounterTimestamp() {
+  uint32_t latest = 0;
+  streamEncounterRecords([&](const EncounterRecordDisk &record) {
+    latest = max(latest, record.timestamp);
+  });
+  return latest;
 }
 
 size_t proximityUsersBytes() {

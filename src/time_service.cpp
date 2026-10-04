@@ -3,10 +3,14 @@
 #include <LittleFS.h>
 #include <WiFi.h>
 #include <esp_sntp.h>
+#include <esp_timer.h>
+#include <freertos/FreeRTOS.h>
 #include <sys/time.h>
 #include <time.h>
 
 #include "config.h"
+#include "proximity_manager.h"
+#include "proximity_store.h"
 
 namespace {
 constexpr uint32_t MIN_VALID_UNIX_TIME = 1700000000UL;
@@ -26,9 +30,10 @@ uint32_t lastCheckpointMs = 0;
 uint32_t lastNtpSync = 0;
 bool ntpStarted = false;
 bool wifiWasConnected = false;
-volatile bool ntpSyncPending = false;
-
-void onNtpTimeSynchronized(timeval *) { ntpSyncPending = true; }
+portMUX_TYPE ntpMutex = portMUX_INITIALIZER_UNLOCKED;
+bool ntpSyncPending = false;
+timeval pendingNtpTime{};
+int64_t pendingNtpReceivedUs = 0;
 
 uint32_t checkpointChecksum(uint32_t unixSeconds) {
   return TIME_MAGIC ^ unixSeconds ^ 0xa59c3e71UL;
@@ -55,7 +60,36 @@ bool applySystemTime(uint32_t unixSeconds) {
   timeval value{static_cast<time_t>(unixSeconds), 0};
   return settimeofday(&value, nullptr) == 0;
 }
+
+bool changeSystemTime(const timeval &value) {
+  // All history/file access stays on the main task, before changing UTC.
+  const int64_t startedUs = esp_timer_get_time();
+  if (!proximityManager.onTimeChanging()) {
+    proximityManager.onTimeSynchronized();  // Reopen any successfully closed segments.
+    return false;
+  }
+  timeval corrected = value;
+  const int64_t microseconds = corrected.tv_usec + esp_timer_get_time() - startedUs;
+  corrected.tv_sec += microseconds / 1000000;
+  corrected.tv_usec = microseconds % 1000000;
+  const bool applied = settimeofday(&corrected, nullptr) == 0;
+  // Reopen on the unchanged clock too if applying UTC failed.
+  proximityManager.onTimeSynchronized();
+  return applied;
+}
 }  // namespace
+
+// ESP-IDF explicitly provides this weak hook for replacing SNTP's time update.
+// Defer applying it until the main task has flushed END records with old UTC.
+extern "C" void sntp_sync_time(timeval *value) {
+  if (!value || value->tv_sec < MIN_VALID_UNIX_TIME) return;
+  const int64_t receivedUs = esp_timer_get_time();
+  portENTER_CRITICAL(&ntpMutex);
+  pendingNtpTime = *value;
+  pendingNtpReceivedUs = receivedUs;
+  ntpSyncPending = true;
+  portEXIT_CRITICAL(&ntpMutex);
+}
 
 bool utcTimeValid() {
   return static_cast<uint64_t>(time(nullptr)) >= MIN_VALID_UNIX_TIME;
@@ -89,7 +123,8 @@ bool persistUtcTime() {
 }
 
 bool setUtcTime(uint32_t unixSeconds) {
-  if (unixSeconds < MIN_VALID_UNIX_TIME || !applySystemTime(unixSeconds)) {
+  const timeval value{static_cast<time_t>(unixSeconds), 0};
+  if (unixSeconds < MIN_VALID_UNIX_TIME || !changeSystemTime(value)) {
     return false;
   }
   return persistUtcTime();
@@ -99,12 +134,17 @@ bool beginTimeService() {
   if (!LittleFS.begin(true)) return false;
   TimeCheckpoint checkpoint{};
   bool recoveredTemp = false;
-  if (!readCheckpoint(TIME_FILE, checkpoint)) {
-    if (!readCheckpoint(TIME_TEMP, checkpoint)) return false;
-    recoveredTemp = true;
+  bool haveCheckpoint = readCheckpoint(TIME_FILE, checkpoint);
+  if (!haveCheckpoint) {
+    haveCheckpoint = readCheckpoint(TIME_TEMP, checkpoint);
+    recoveredTemp = haveCheckpoint;
   }
-  if ((!utcTimeValid() || utcNow() < checkpoint.unixSeconds) &&
-      !applySystemTime(checkpoint.unixSeconds)) {
+  // Encounters can be newer than the weekly UTC checkpoint after a power loss.
+  const uint32_t restoreTime = max<uint32_t>(haveCheckpoint ? checkpoint.unixSeconds : 0,
+                                            latestEncounterTimestamp());
+  if (restoreTime < MIN_VALID_UNIX_TIME) return false;
+  if ((!utcTimeValid() || utcNow() < restoreTime) &&
+      !applySystemTime(restoreTime)) {
     return false;
   }
   if (recoveredTemp) {
@@ -112,8 +152,8 @@ bool beginTimeService() {
     LittleFS.rename(TIME_TEMP, TIME_FILE);
   }
   lastCheckpointMs = millis();
-  Serial.printf("UTC: restored persistent checkpoint %lu\n",
-                static_cast<unsigned long>(checkpoint.unixSeconds));
+  Serial.printf("UTC: restored checkpoint/history floor %lu\n",
+                static_cast<unsigned long>(restoreTime));
   return true;
 }
 
@@ -121,7 +161,6 @@ bool loopTimeService() {
   bool synchronized = false;
   const bool wifiConnected = WiFi.status() == WL_CONNECTED;
   if (wifiConnected && !wifiWasConnected) {
-    sntp_set_time_sync_notification_cb(onNtpTimeSynchronized);
     configTime(0, 0, NTP_SERVER_PRIMARY, NTP_SERVER_SECONDARY);
     sntp_set_sync_interval(NTP_SYNC_INTERVAL_MS);
     ntpStarted = true;
@@ -129,14 +168,38 @@ bool loopTimeService() {
                   static_cast<unsigned long>(NTP_SYNC_INTERVAL_MS));
   }
   wifiWasConnected = wifiConnected;
-  if (ntpSyncPending) {
+  timeval ntpTime{};
+  int64_t receivedUs = 0;
+  portENTER_CRITICAL(&ntpMutex);
+  const bool haveNtpTime = ntpSyncPending;
+  if (haveNtpTime) {
+    ntpTime = pendingNtpTime;
+    receivedUs = pendingNtpReceivedUs;
     ntpSyncPending = false;
-    if (utcTimeValid()) {
+  }
+  portEXIT_CRITICAL(&ntpMutex);
+  if (haveNtpTime) {
+    // Include time spent waiting for the main loop, not just the server sample.
+    const int64_t microseconds = ntpTime.tv_usec + esp_timer_get_time() - receivedUs;
+    ntpTime.tv_sec += microseconds / 1000000;
+    ntpTime.tv_usec = microseconds % 1000000;
+    if (changeSystemTime(ntpTime)) {
       lastNtpSync = utcNow();
       persistUtcTime();
+      sntp_set_sync_status(SNTP_SYNC_STATUS_COMPLETED);
       synchronized = true;
       Serial.printf("UTC: synchronized by NTP at %lu\n",
                     static_cast<unsigned long>(lastNtpSync));
+    } else {
+      Serial.println("UTC: NTP update deferred; encounter history could not be closed");
+      // Retry the sample later, without overwriting a newer response.
+      portENTER_CRITICAL(&ntpMutex);
+      if (!ntpSyncPending) {
+        pendingNtpTime = ntpTime;
+        pendingNtpReceivedUs = esp_timer_get_time();
+        ntpSyncPending = true;
+      }
+      portEXIT_CRITICAL(&ntpMutex);
     }
   }
   if (utcTimeValid() &&

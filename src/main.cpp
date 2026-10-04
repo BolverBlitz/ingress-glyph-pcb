@@ -174,7 +174,7 @@ void loop() {
     leds.refreshPowerLimit();
     ++displayRevision;
   }
-  if (loopTimeService()) proximityManager.onTimeSynchronized();
+  loopTimeService();
   web.loop();
   miscController.loop();
   proximityManager.setLocalEmergency(

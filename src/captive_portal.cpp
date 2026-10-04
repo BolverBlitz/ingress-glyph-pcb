@@ -814,7 +814,6 @@ void GlyphWebServer::setUtcFromBrowser() {
     server_.send(400, "text/plain", "Invalid UTC timestamp");
     return;
   }
-  proximityManager.onTimeSynchronized();
   server_.send(204);
 }
 

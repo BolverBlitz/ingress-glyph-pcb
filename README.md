@@ -41,6 +41,23 @@ seconds.
   broadcast the Emergency message to nearby devices.
 - In Emergency mode, hold both buttons for 2 seconds: disable Emergency mode.
 
+## Encounter history
+
+Encounter history records `FIRST`/`LAST` pairs with UTC timestamps. Before NTP or
+Browser Sync changes the clock, active encounters are closed on the old timeline
+using elapsed uptime, then reopened on the corrected timeline. A 17-minute visit
+therefore retains 17 minutes even if UTC jumps forward or backward. Time spent
+nearby before the first usable UTC synchronization is recovered from uptime.
+Clock corrections do not trigger extra friendship checks.
+
+After reboot, the clock is restored to at least the newest saved encounter
+timestamp or UTC checkpoint. An interrupted encounter without a `LAST` is
+estimated from the next `FIRST`, capped at ten minutes; if that timestamp is
+equal or earlier, the ten-minute fallback is used. These reboot estimates cannot
+recover the actual encounter duration or time spent powered off. NTP and Browser
+Sync can still correct an inaccurate clock backward. The normal encounter end
+includes the existing ten-minute absence timeout.
+
 ## Coordinated friendship animation
 
 Both devices need this firmware for the new friendship protocol. Discovery,

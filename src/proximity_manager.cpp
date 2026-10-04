@@ -3,11 +3,13 @@
 #include <NimBLEDevice.h>
 #include <WiFi.h>
 #include <esp_system.h>
+#include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/queue.h>
 
 #include "app_state.h"
 #include "config.h"
+#include "encounter_timing.h"
 #include "proximity_store.h"
 #include "time_service.h"
 
@@ -48,6 +50,9 @@ constexpr uint8_t AGENT_GLYPH_VERSION = 1;
 constexpr size_t AGENT_GLYPH_HEADER_BYTES = 4;
 constexpr size_t AGENT_GLYPH_BYTES = AGENT_GLYPH_HEADER_BYTES + sizeof(Rgbw) * LED_COUNT;
 constexpr uint32_t NAME_RETRY_MS = 60UL * 1000UL;
+uint64_t encounterNowMs() {
+  return static_cast<uint64_t>(esp_timer_get_time()) / 1000U;
+}
 uint32_t newRequestId() {
   uint32_t id;
   do { id = esp_random(); } while (!id);
@@ -293,11 +298,13 @@ void ProximityManager::processObservation(const Observation &observation) {
     entry->faction = observation.faction;
     entry->friendFlag = user.friendFlag;
     entry->username = user.username;
+    entry->firstSeenMonotonicMs = encounterNowMs();
     if (utcTimeValid()) {
       entry->firstSeenUnix = utcNow();
       entry->firstLogged = appendEncounter(entry->userId, false,
                                            entry->firstSeenUnix);
       entry->friendSyncPending = entry->firstLogged && entry->friendFlag;
+      entry->visitLogged = entry->firstLogged;
     }
   }
   entry->lastSeenMs = observation.receivedMs;
@@ -380,8 +387,13 @@ void ProximityManager::expireNearby() {
       entry.lastGlyphAttemptMs = 0;
     }
     if (!entry.used || nowMs - entry.lastSeenMs < NEARBY_EXPIRY_MS) continue;
-    if (entry.firstLogged && utcTimeValid()) {
-      appendEncounter(entry.userId, true, utcNow());
+    if (entry.firstLogged) {
+      const uint32_t elapsed = EncounterTiming::elapsedSeconds(
+          entry.firstSeenMonotonicMs, encounterNowMs());
+      if (!appendEncounter(entry.userId, true,
+                           EncounterTiming::endTimestamp(entry.firstSeenUnix, elapsed))) {
+        continue;
+      }
     }
     entry = NearbyEntry{};
   }
@@ -455,13 +467,39 @@ void ProximityManager::refreshIdentity() {
   }
 }
 
+bool ProximityManager::onTimeChanging() {
+  const uint64_t nowMs = encounterNowMs();
+  bool ok = true;
+  for (NearbyEntry &entry : nearby_) {
+    if (!entry.used || !entry.firstLogged) continue;
+    const uint32_t elapsed = EncounterTiming::elapsedSeconds(
+        entry.firstSeenMonotonicMs, nowMs);
+    if (!appendEncounter(entry.userId, true,
+                         EncounterTiming::endTimestamp(entry.firstSeenUnix, elapsed))) {
+      ok = false;
+      continue;
+    }
+    entry.firstLogged = false;
+    entry.firstSeenUnix = 0;
+    entry.firstSeenMonotonicMs = nowMs;
+  }
+  return ok;
+}
+
 void ProximityManager::onTimeSynchronized() {
+  if (!utcTimeValid()) return;
   const uint32_t now = utcNow();
+  const uint64_t nowMs = encounterNowMs();
   for (NearbyEntry &entry : nearby_) {
     if (!entry.used || entry.firstLogged) continue;
-    entry.firstSeenUnix = now;
-    entry.firstLogged = appendEncounter(entry.userId, false, now);
-    entry.friendSyncPending = entry.firstLogged && entry.friendFlag;
+    // If this visit began with no usable UTC, retain its elapsed uptime too.
+    entry.firstSeenUnix = EncounterTiming::backdatedStart(
+        now, EncounterTiming::elapsedSeconds(entry.firstSeenMonotonicMs, nowMs));
+    entry.firstLogged = appendEncounter(entry.userId, false, entry.firstSeenUnix);
+    if (entry.firstLogged) {
+      if (!entry.visitLogged) entry.friendSyncPending = entry.friendFlag;
+      entry.visitLogged = true;
+    }
   }
 }
 
@@ -1042,10 +1080,12 @@ struct PeopleContext {
   String query;
   uint16_t activeIds[32];
   uint32_t activeSince[32];
+  uint32_t activeElapsed[32];
   uint8_t activeCount;
   uint8_t resultCount;
   uint16_t resultIds[100];
   uint32_t resultActiveSince[100];
+  uint32_t resultActiveElapsed[100];
 };
 
 void addMatchingUser(const KnownUser &user, void *opaque) {
@@ -1055,9 +1095,11 @@ void addMatchingUser(const KnownUser &user, void *opaque) {
   searchable.toLowerCase();
   if (!context.query.isEmpty() && searchable.indexOf(context.query) < 0) return;
   uint32_t activeSince = 0;
+  uint32_t activeElapsed = 0;
   for (uint8_t i = 0; i < context.activeCount; ++i) {
     if (context.activeIds[i] == user.userId) {
       activeSince = context.activeSince[i];
+      activeElapsed = context.activeElapsed[i];
       break;
     }
   }
@@ -1071,24 +1113,28 @@ void addMatchingUser(const KnownUser &user, void *opaque) {
   item["totalSeconds"] = 0;
   context.resultIds[context.resultCount] = user.userId;
   context.resultActiveSince[context.resultCount] = activeSince;
+  context.resultActiveElapsed[context.resultCount] = activeElapsed;
   ++context.resultCount;
 }
 }  // namespace
 
 void ProximityManager::writePeople(JsonArray array, const String &query) const {
-  PeopleContext context{array, query, {}, {}, 0, 0, {}, {}};
+  PeopleContext context{array, query, {}, {}, {}, 0, 0, {}, {}, {}};
   context.query.toLowerCase();
+  const uint64_t nowMs = encounterNowMs();
   for (const NearbyEntry &entry : nearby_) {
     if (!entry.used || context.activeCount >= MAX_NEARBY) continue;
     context.activeIds[context.activeCount] = entry.userId;
-    context.activeSince[context.activeCount] = entry.firstSeenUnix;
+    context.activeSince[context.activeCount] = entry.firstLogged ? entry.firstSeenUnix : 0;
+    context.activeElapsed[context.activeCount] = EncounterTiming::elapsedSeconds(
+        entry.firstSeenMonotonicMs, nowMs);
     ++context.activeCount;
   }
   forEachKnownUser(addMatchingUser, &context);
   UserHistory histories[100] = {};
   const uint32_t now = utcTimeValid() ? utcNow() : 0;
   readUserHistories(context.resultIds, histories, context.resultActiveSince,
-                    context.resultCount, now);
+                    context.resultCount, now, context.resultActiveElapsed);
   for (uint8_t i = 0; i < context.resultCount; ++i) {
     JsonObject item = array[i].as<JsonObject>();
     item["lastSeen"] = histories[i].lastSeen;

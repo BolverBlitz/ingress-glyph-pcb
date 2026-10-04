@@ -21,6 +21,7 @@ class ProximityManager {
   void setLocalEmergency(bool emergency);
   void setLocalFriendRequest(bool active);
   void refreshIdentity();
+  bool onTimeChanging();
   void onTimeSynchronized();
   bool resetStoredData();
   bool setFriend(uint16_t userId, bool friendFlag);
@@ -64,6 +65,7 @@ class ProximityManager {
     uint8_t rssiSampleCount = 0;
     uint8_t rssiSampleIndex = 0;
     uint32_t firstSeenUnix = 0;
+    uint64_t firstSeenMonotonicMs = 0;
     uint32_t lastSeenMs = 0;
     uint32_t lastNameAttemptMs = 0;
     uint32_t lastGlyphAttemptMs = 0;
@@ -78,6 +80,7 @@ class ProximityManager {
     uint32_t closedRequestId = 0;
     bool acceptPending = false;
     bool firstLogged = false;
+    bool visitLogged = false;
   };
   struct Observation {
     uint8_t deviceId[6];
