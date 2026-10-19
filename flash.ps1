@@ -28,14 +28,35 @@ function Invoke-Checked {
     }
 }
 
-$pythonCommand = Get-Command py -ErrorAction SilentlyContinue
-if (-not $pythonCommand) {
-    $pythonCommand = Get-Command python -ErrorAction SilentlyContinue
+function Find-PlatformIOPython {
+    # A Python launcher can select a different installation from the one that
+    # has PlatformIO. Prefer virtual environments, then check PATH candidates.
+    $candidates = @(
+        if ($env:VIRTUAL_ENV) { Join-Path $env:VIRTUAL_ENV 'Scripts\python.exe' }
+        Join-Path $projectDirectory '.pio\venv\Scripts\python.exe'
+        Join-Path $projectDirectory '.venv\Scripts\python.exe'
+        Join-Path $env:USERPROFILE '.platformio\penv\Scripts\python.exe'
+        Get-Command python, py -All -ErrorAction SilentlyContinue |
+            Select-Object -ExpandProperty Source
+    )
+    $probe = "import importlib.util, sys; ready = all(importlib.util.find_spec(name) is not None for name in ('platformio', 'serial')); print(sys.executable) if ready else None; sys.exit(0 if ready else 1)"
+    foreach ($candidate in ($candidates | Select-Object -Unique)) {
+        if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
+        try {
+            $resolvedPython = & $candidate -c $probe 2>$null
+            if ($LASTEXITCODE -eq 0 -and $resolvedPython) {
+                return ($resolvedPython | Select-Object -Last 1).Trim()
+            }
+        }
+        catch {
+            # Try the next installation if this interpreter cannot start.
+        }
+    }
+    throw 'No Python installation with PlatformIO and pyserial was found. Run python -m pip install platformio pyserial, then retry.'
 }
-if (-not $pythonCommand) {
-    throw 'Python was not found. Install Python and PlatformIO first.'
-}
-$python = $pythonCommand.Source
+
+$python = Find-PlatformIOPython
+Write-Host "Using Python: $python"
 
 if ([string]::IsNullOrWhiteSpace($Port)) {
     $Port = Read-Host 'Serial port or number [COM11]'
