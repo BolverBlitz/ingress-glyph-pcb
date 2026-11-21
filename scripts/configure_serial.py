@@ -13,6 +13,14 @@ import serial
 READY_TEXT = "Serial configuration ready"
 SAVE_TEXT = "Config saved. Restarting controller"
 CONNECTED_PATTERN = re.compile(r"Wi-Fi: connected, address ([0-9.]+)")
+IP_REPLY_PATTERN = re.compile(r"^Device IP: ([0-9.]+) \(Wi-Fi\)$")
+STARTUP_TIMEOUT = 60.0
+
+
+def normalize_faction(value: str) -> str:
+    normalized = value.lower()
+    aliases = {"res": "resistance", "enl": "enlightened"}
+    return aliases.get(normalized, normalized)
 
 
 def quote_argument(value: str) -> str:
@@ -41,47 +49,73 @@ def wait_for(port: serial.Serial, expected: str, timeout: float) -> None:
     raise TimeoutError(f"controller did not report {expected!r}")
 
 
+def request_lines(port: serial.Serial, request: bytes, timeout: float):
+    """Repeat only read-only queries while the controller completes startup."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        port.write(request)
+        port.flush()
+        remaining = deadline - time.monotonic()
+        if remaining > 0:
+            yield from read_lines(port, min(2.0, remaining))
+
+
+def wait_until_ready(port: serial.Serial, timeout: float = STARTUP_TIMEOUT):
+    # The boot banner precedes blocking Wi-Fi/BLE initialization. Only a show
+    # response proves setup() has completed and loopSerialConfig() is running.
+    status = []
+    for line in request_lines(port, b"show\n", timeout):
+        if line.startswith("Error:"):
+            raise RuntimeError(line)
+        if line.startswith("Config: firmware "):
+            status = [line]
+        elif status and line.startswith("Config:"):
+            status.append(line)
+        if len(status) == 3:
+            return status
+    raise TimeoutError(
+        f"controller did not respond to show within {timeout:g} seconds; "
+        "check the selected port and the controller's startup log"
+    )
+
+
 def send_saved_command(port: serial.Serial, command: str) -> None:
     port.write((command + "\n").encode("utf-8"))
     port.flush()
-    wait_for(port, SAVE_TEXT, 8.0)
-    wait_for(port, READY_TEXT, 10.0)
+    try:
+        wait_for(port, SAVE_TEXT, 15.0)
+    except TimeoutError as error:
+        # Name the command type without exposing Wi-Fi passwords.
+        raise TimeoutError(f"{command.split()[0]} command was not acknowledged: {error}") from error
+    wait_for(port, READY_TEXT, STARTUP_TIMEOUT)
+    wait_until_ready(port)
 
 
 def wait_for_ip(port: serial.Serial) -> str:
-    for line in read_lines(port, 35.0):
+    # Startup handshakes may already have consumed the boot-time IP message.
+    for line in request_lines(port, b"ip\n", 35.0):
         if line.startswith("Error:"):
             raise RuntimeError(line)
-        match = CONNECTED_PATTERN.search(line)
+        match = CONNECTED_PATTERN.search(line) or IP_REPLY_PATTERN.match(line)
         if match:
             return match.group(1)
     raise TimeoutError("Wi-Fi did not connect within 35 seconds")
 
 
 def show_status(port: serial.Serial) -> None:
-    # The ready banner is printed near the start of setup; BLE, the web server,
-    # and storage initialization may still be running before loop() reads show.
-    time.sleep(1.0)
-    port.write(b"show\n")
-    port.flush()
-    found = 0
-    for line in read_lines(port, 10.0):
-        if line.startswith("Error:"):
-            raise RuntimeError(line)
-        if line.startswith("Config:"):
-            print(line)
-            found += 1
-            if found == 3:
-                return
-    raise TimeoutError("controller did not return serial configuration status")
+    for line in wait_until_ready(port, timeout=10.0):
+        print(line)
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Set hardware revision and optional Wi-Fi after flashing."
+        description="Set hardware revision, optional faction and Wi-Fi after flashing."
     )
     parser.add_argument("--port", required=True, help="serial port, e.g. COM11")
     parser.add_argument("--revision", required=True, choices=("1", "2"))
+    parser.add_argument("--faction", type=normalize_faction,
+                        choices=("resistance", "enlightened"),
+                        help="optional faction (res/enl aliases; omitted leaves current unchanged)")
     parser.add_argument("--ssid", help="optional Wi-Fi SSID for profile 1")
     parser.add_argument("--baud", type=int, default=115200)
     args = parser.parse_args()
@@ -107,12 +141,15 @@ def main() -> int:
 
     try:
         port.open()
-        # Opening a USB UART can reset the ESP32. Let startup complete whether
-        # or not this process attached early enough to see the ready message.
-        time.sleep(2.0)
         port.reset_input_buffer()
+        print("Waiting for controller startup...", flush=True)
+        wait_until_ready(port)
         send_saved_command(port, f"rev {args.revision}")
         print(f"Hardware revision {args.revision} saved.")
+
+        if args.faction is not None:
+            send_saved_command(port, f"faction {args.faction}")
+            print(f"Faction {args.faction} saved.")
 
         ip_address = None
         if args.ssid is not None:

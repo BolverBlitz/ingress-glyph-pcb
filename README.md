@@ -129,13 +129,17 @@ At 115200 baud, the serial configuration console accepts:
 show
 ip
 rev 2
+faction enlightened
 wifi 1 "Network name" "Network password"
 wifi 2 "Backup network" "Network password"
 wifi-clear 1
 ```
 
 Passwords are never printed by `show`. An empty password configures an open
-network. Revision and Wi-Fi changes are saved and restart the controller.
+network. Revision, faction and Wi-Fi changes are saved and restart the controller.
+Use `faction res` / `faction resistance` for Resistance (blue), or
+`faction enl` / `faction enlightened` for Enlightened (green). Faction names
+and aliases are case-insensitive. The `show` command includes the saved faction.
 
 To display the IP addresses of all controllers connected over USB serial, run:
 
@@ -197,6 +201,84 @@ bash ./flash.sh
 When Wi-Fi setup is requested, the script waits
 for the connection and prints the controller's assigned IP address.
 On Windows, the port prompt accepts either `COM11` or just `11`.
+Both flash helpers prompt for a faction: `res` / `resistance` (blue) or
+`enl` / `enlightened` (green). Leave it blank to keep the board's current faction. On Windows, you
+can also supply it directly:
+
+```powershell
+.\flash.ps1 -Port COM12 -Revision 2 -Language en -Faction enl
+```
+
+Serial configuration waits up to 60 seconds for the controller to answer a
+`show` query before sending settings, and again after each saved change restarts
+the board. Saved Wi-Fi profiles can delay startup while connection attempts
+finish. If flashing succeeded but configuration failed, retry configuration
+without rebuilding or uploading:
+
+```powershell
+python scripts/configure_serial.py --port COM11 --revision 2 --faction enl
+```
+
+### Backup and restore (Windows)
+
+Close serial monitors, then save a complete snapshot of a board:
+
+```powershell
+.\backup.ps1 -Port COM12
+.\backup.ps1 -Port COM12 -Output .\backups\my-board.zip
+```
+
+Without `-Output`, a unique timestamped ZIP is saved in `backups/`. Existing
+backup files are never overwritten. The snapshot includes the entire 4 MB
+flash: firmware and UI language, partition table, NVS, settings, Wi-Fi,
+faction, drawings, friends, history, clock checkpoints, and backup files on
+the board. Reading flash temporarily stops the firmware and restarts the board
+afterward. These scripts use the ESP32 tools installed by PlatformIO; run a
+firmware build once if the tools are not installed yet.
+
+To put that board back exactly as it was at backup time:
+
+```powershell
+.\restore.ps1 -Port COM12 -Backup .\backups\my-board.zip
+```
+
+Restore validates the archive format, chip type, image size, and SHA-256 checksum
+before accessing the board. It then replaces all flash, verifies the written
+image, and restarts the board. This also restores the backed-up firmware;
+changes made after the backup are replaced. Use these images with the original
+ESP32-C3 4 MB board. Hardware MAC addresses and eFuses are not backed up or changed.
+If a restore is interrupted, rerun it with the same backup.
+
+Backups contain Wi-Fi passwords and personal history. Keep them private;
+the default `backups/` directory is ignored by Git. No board is erased merely
+by creating a backup.
+
+The same operations are available from Python on other platforms:
+
+```bash
+python scripts/board_backup.py backup --port /dev/ttyUSB0 --output backups/my-board.zip
+python scripts/board_backup.py restore --port /dev/ttyUSB0 --backup backups/my-board.zip
+```
+
+### Factory reset (Windows)
+
+To remove all saved board data and reinstall firmware with factory defaults:
+
+```powershell
+.\factory-reset.ps1 -Port COM12
+```
+
+Use `-Language de` or `-Language ja` for German or Japanese (default: English).
+The script asks for hardware revision **1** or **2** before building, then saves
+your selection after flashing. Use `-Revision 2` to supply it directly.
+Close serial monitors before running. The script builds first, then erases the
+entire flash and uploads fresh firmware. This permanently removes settings,
+Wi-Fi credentials, drawings, display preferences, friends, encounter history,
+clock checkpoints, backup files, and ESP32 NVS data. No previous configuration
+is restored; only the selected hardware revision is configured afterward.
+The board's hardware MAC address remains unchanged.
+
+If upload fails after erasing, rerun the script to restore the firmware.
 
 ## Display effects
 

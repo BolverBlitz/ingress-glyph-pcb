@@ -20,6 +20,7 @@ void printHelp() {
   Serial.println("  show");
   Serial.println("  ip");
   Serial.println("  rev <1|2>");
+  Serial.println("  faction <resistance|res|enlightened|enl>");
   Serial.println("  wifi <1|2> \"SSID\" [\"password\"]");
   Serial.println("  wifi-clear <1|2>");
   Serial.println("Quotes allow spaces; passwords are never printed.");
@@ -43,8 +44,9 @@ void printIpAddress() {
 }
 
 void printStatus() {
-  Serial.printf("Config: firmware %s, hardware revision %u\n",
-                FIRMWARE_VERSION, globalSettings.hardwareRevision);
+  Serial.printf("Config: firmware %s, hardware revision %u, faction %s\n",
+                FIRMWARE_VERSION, globalSettings.hardwareRevision,
+                globalSettings.enlightened ? "enlightened" : "resistance");
   for (uint8_t i = 0; i < 2; ++i) {
     const WifiProfile &profile = globalSettings.wifi[i];
     Serial.printf("Config: Wi-Fi %u: %s%s\n", i + 1,
@@ -118,6 +120,24 @@ void setRevision(const String &value) {
   restartAfterSave();
 }
 
+void setFaction(String value) {
+  value.toLowerCase();
+  if (value == "res") value = "resistance";
+  if (value == "enl") value = "enlightened";
+  if (value != "resistance" && value != "enlightened") {
+    Serial.println("Error: use faction resistance/res or enlightened/enl.");
+    return;
+  }
+  const GlobalSettings previous = globalSettings;
+  globalSettings.enlightened = value == "enlightened";
+  if (!saveSettings()) {
+    globalSettings = previous;
+    Serial.println("Error: could not save the faction.");
+    return;
+  }
+  restartAfterSave();
+}
+
 bool parseWifiSlot(const String &value, uint8_t &index) {
   if (value != "1" && value != "2") return false;
   index = value.toInt() - 1;
@@ -186,6 +206,8 @@ void handleLine(String line) {
     printIpAddress();
   } else if (tokens[0] == "rev" && count == 2) {
     setRevision(tokens[1]);
+  } else if (tokens[0] == "faction" && count == 2) {
+    setFaction(tokens[1]);
   } else if (tokens[0] == "wifi" && (count == 3 || count == 4)) {
     setWifi(tokens[1], tokens[2], count == 4 ? tokens[3] : String());
   } else if (tokens[0] == "wifi-clear" && count == 2) {

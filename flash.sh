@@ -46,6 +46,20 @@ while [[ "$revision" != "1" && "$revision" != "2" ]]; do
   fi
 done
 
+faction=""
+while true; do
+  read -r -p "Faction: resistance/res (blue), enlightened/enl (green) [leave blank to keep current]: " faction
+  faction="$(printf '%s' "$faction" | tr '[:upper:]' '[:lower:]')"
+  case "$faction" in
+    res) faction="resistance" ;;
+    enl) faction="enlightened" ;;
+  esac
+  if [[ -z "$faction" || "$faction" == "resistance" || "$faction" == "enlightened" ]]; then
+    break
+  fi
+  echo "Please enter resistance/res, enlightened/enl, or leave blank."
+done
+
 read -r -p "Wi-Fi SSID (leave blank to skip Wi-Fi setup): " wifi_ssid
 wifi_password=""
 if [[ -n "$wifi_ssid" ]]; then
@@ -65,6 +79,9 @@ configure_args=(
   --port "$port"
   --revision "$revision"
 )
+if [[ -n "$faction" ]]; then
+  configure_args+=(--faction "$faction")
+fi
 if [[ -n "$wifi_ssid" ]]; then
   configure_args+=(--ssid "$wifi_ssid")
 fi
