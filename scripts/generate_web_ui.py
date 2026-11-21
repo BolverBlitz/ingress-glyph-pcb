@@ -8,8 +8,6 @@ from pathlib import Path
 
 
 PROJECT_DIR = Path(env.subst("$PROJECT_DIR"))
-# Link with the same LTO setting enabled for compilation in platformio.ini.
-env.Append(LINKFLAGS=["-flto"])
 sys.path.insert(0, str(PROJECT_DIR / "scripts"))
 from ui_translations import translate_asset
 from web_ui_minify import minify_css, minify_html, minify_js
