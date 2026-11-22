@@ -1,0 +1,4 @@
+(fp_lib_table
+	(version 7)
+	(lib (name "ProPrj_ingress-glyph-pcb_2026-11-22-import-fps") (type "KiCad") (uri "${KIPRJMOD}/ProPrj_ingress-glyph-pcb_2026-11-22-import-fps.pretty") (options "kicad_import_cache=1") (descr ""))
+)
