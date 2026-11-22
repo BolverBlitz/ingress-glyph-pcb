@@ -2,7 +2,7 @@
 
 #include <string.h>
 
-#include <ArduinoJson.h>
+#include "firmware_json.h"
 #include "effect_settings.h"
 
 inline const char *effectName(DisplayEffect e) {

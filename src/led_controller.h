@@ -1,7 +1,5 @@
 #pragma once
 
-#include <Adafruit_NeoPixel.h>
-
 #include "config.h"
 #include "rgbw.h"
 
@@ -15,7 +13,9 @@ class LedController {
   void refreshPowerLimit();
 
  private:
-  Adafruit_NeoPixel strip_;
+  uint8_t pin_ = LED_PIN_REV1;
+  // SK6812 wire order is GRBW. The RMT driver sends this buffer directly.
+  uint8_t ledBytes_[LED_COUNT * 4U] = {};
   uint8_t rotationMap_[4][LED_COUNT] = {};
   Rgbw lastRequestedFrame_[LED_COUNT] = {};
   uint32_t lastSoftwareLimitMw_ = 0;

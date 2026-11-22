@@ -7,23 +7,22 @@
 #include "glyph_drawer.h"
 #include "sk6812_rmt.h"
 
-LedController::LedController()
-    : strip_(LED_COUNT, LED_PIN_REV1, NEO_GRBW + NEO_KHZ800) {}
+LedController::LedController() = default;
 
 void LedController::begin() {
-  strip_.setPin(globalSettings.hardwareRevision == 2 ? LED_PIN_REV2
-                                                     : LED_PIN_REV1);
+  pin_ = globalSettings.hardwareRevision == 2 ? LED_PIN_REV2 : LED_PIN_REV1;
   buildRotationMaps();
-  strip_.begin();
-  strip_.clear();
+  pinMode(pin_, OUTPUT);
+  digitalWrite(pin_, LOW);
+  memset(ledBytes_, 0, sizeof(ledBytes_));
   beginSk6812Rmt(pin());
-  showSk6812Rmt(strip_.getPixels(), LED_COUNT * 4U);
+  showSk6812Rmt(ledBytes_, sizeof(ledBytes_));
   Serial.printf("LED: hardware revision %u, data GPIO%u\n",
                 globalSettings.hardwareRevision, pin());
 }
 
 uint8_t LedController::pin() const {
-  return static_cast<uint8_t>(strip_.getPin());
+  return pin_;
 }
 
 void LedController::buildRotationMaps() {
@@ -165,16 +164,14 @@ void LedController::showPowerLimitedInternal(const Rgbw *pixels,
         pixels[rotationMap_[globalSettings.rotationQuarterTurns][i]];
     const bool pureWhite = pixel.w == 255 && !allowRgbWithFullWhite;
     const uint32_t outputScale = brightnessScale * limiterScale;
-    strip_.setPixelColor(
-        i, strip_.Color(
-               pureWhite ? 0 : static_cast<uint32_t>(pixel.r) * outputScale /
-                                       (255UL * 255UL),
-               pureWhite ? 0 : static_cast<uint32_t>(pixel.g) * outputScale /
-                                       (255UL * 255UL),
-               pureWhite ? 0 : static_cast<uint32_t>(pixel.b) * outputScale /
-                                       (255UL * 255UL),
-               static_cast<uint32_t>(pixel.w) * outputScale /
-                   (255UL * 255UL)));
+    uint8_t *bytes = ledBytes_ + i * 4U;
+    bytes[0] = pureWhite ? 0 : static_cast<uint32_t>(pixel.g) * outputScale /
+                                  (255UL * 255UL);
+    bytes[1] = pureWhite ? 0 : static_cast<uint32_t>(pixel.r) * outputScale /
+                                  (255UL * 255UL);
+    bytes[2] = pureWhite ? 0 : static_cast<uint32_t>(pixel.b) * outputScale /
+                                  (255UL * 255UL);
+    bytes[3] = static_cast<uint32_t>(pixel.w) * outputScale / (255UL * 255UL);
   }
-  showSk6812Rmt(strip_.getPixels(), LED_COUNT * 4U);
+  showSk6812Rmt(ledBytes_, sizeof(ledBytes_));
 }

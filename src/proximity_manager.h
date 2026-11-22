@@ -1,7 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
-#include <ArduinoJson.h>
+#include "firmware_json.h"
 #include <NimBLEDevice.h>
 
 #include "config.h"

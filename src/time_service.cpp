@@ -161,7 +161,15 @@ bool loopTimeService() {
   bool synchronized = false;
   const bool wifiConnected = WiFi.status() == WL_CONNECTED;
   if (wifiConnected && !wifiWasConnected) {
-    configTime(0, 0, NTP_SERVER_PRIMARY, NTP_SERVER_SECONDARY);
+    // The firmware stores UTC seconds; timezone/DST formatting belongs to the
+    // browser. Avoid configTime(), which also links the POSIX timezone parser.
+    // These esp_sntp APIs marshal calls to lwIP's TCP/IP task safely.
+    if (esp_sntp_enabled()) esp_sntp_stop();
+    esp_sntp_setoperatingmode(ESP_SNTP_OPMODE_POLL);
+    esp_sntp_setservername(0, NTP_SERVER_PRIMARY);
+    esp_sntp_setservername(1, NTP_SERVER_SECONDARY);
+    esp_sntp_setservername(2, nullptr);
+    esp_sntp_init();
     sntp_set_sync_interval(NTP_SYNC_INTERVAL_MS);
     ntpStarted = true;
     Serial.printf("UTC: NTP sync started; next periodic sync in %lu ms\n",

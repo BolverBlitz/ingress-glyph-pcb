@@ -1,6 +1,6 @@
 #include "settings_store.h"
 
-#include <ArduinoJson.h>
+#include "firmware_json.h"
 #include <LittleFS.h>
 
 #include "app_state.h"

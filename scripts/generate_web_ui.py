@@ -1,6 +1,5 @@
 Import("env")
 
-import gzip
 import json
 import re
 import sys
@@ -10,7 +9,7 @@ from pathlib import Path
 PROJECT_DIR = Path(env.subst("$PROJECT_DIR"))
 sys.path.insert(0, str(PROJECT_DIR / "scripts"))
 from ui_translations import translate_asset
-from web_ui_minify import minify_css, minify_html, minify_js
+from web_ui_minify import compress_gzip, minify_css, minify_html, minify_js
 WEB_DIR = PROJECT_DIR / "WebUI"
 OUTPUT = Path(env.subst("$BUILD_DIR")) / "localized_web_ui.h"
 LANGUAGE = env.GetProjectOption("custom_ui_language")
@@ -23,32 +22,30 @@ FIRMWARE_VERSION = version_match.group(1)
 env.Append(CPPPATH=[str(OUTPUT.parent)])
 
 ASSETS = (
-    ("MAIN_PAGE_GZIP", "index.html", "gzip_html"),
-    ("DRAW_PAGE_GZIP", "draw.html", "gzip_html"),
-    ("SETTINGS_PAGE_GZIP", "settings.html", "gzip_html"),
-    ("HELP_BUTTONS_PAGE_GZIP", "help.html", "gzip_html"),
-    ("HELP_SETTINGS_PAGE_GZIP", "help_settings.html", "gzip_html"),
-    ("NEARBY_PAGE_GZIP", "nearby.html", "gzip_html"),
-    ("MAIN_CSS", "index.css", "css"),
-    ("DRAW_CSS", "draw.css", "css"),
-    ("SETTINGS_CSS", "settings.css", "css"),
-    ("NEARBY_CSS", "nearby.css", "css"),
-    ("FLASHLIGHT_CSS", "flashlight.css", "css"),
-    ("FLASHLIGHT_JS", "flashlight.js", "js"),
-    ("PWA_MANIFEST", "manifest.webmanifest", "json"),
-    ("SERVICE_WORKER", "sw.js", "js"),
-    ("APP_ICON", "icon.svg", "svg"),
+    ("MAIN_PAGE_GZIP", "index.html", "html"),
+    ("DRAW_PAGE_GZIP", "draw.html", "html"),
+    ("SETTINGS_PAGE_GZIP", "settings.html", "html"),
+    ("HELP_BUTTONS_PAGE_GZIP", "help.html", "html"),
+    ("HELP_SETTINGS_PAGE_GZIP", "help_settings.html", "html"),
+    ("NEARBY_PAGE_GZIP", "nearby.html", "html"),
+    ("MAIN_CSS_GZIP", "index.css", "css"),
+    ("DRAW_CSS_GZIP", "draw.css", "css"),
+    ("SETTINGS_CSS_GZIP", "settings.css", "css"),
+    ("NEARBY_CSS_GZIP", "nearby.css", "css"),
+    ("FLASHLIGHT_CSS_GZIP", "flashlight.css", "css"),
+    ("FLASHLIGHT_JS_GZIP", "flashlight.js", "js"),
+    ("PWA_MANIFEST_GZIP", "manifest.webmanifest", "json"),
+    ("SERVICE_WORKER_GZIP", "sw.js", "js"),
+    ("APP_ICON_GZIP", "icon.svg", "svg"),
 )
 
 
 def minify(name, kind):
     value = translate_asset(name, (WEB_DIR / name).read_text(encoding="utf-8"), LANGUAGE, FIRMWARE_VERSION)
-    if kind == "gzip_html":
-        return gzip.compress(minify_html(value).encode("utf-8"), compresslevel=9, mtime=0)
-    if kind == "css":
-        return minify_css(value)
     if kind == "html":
         return minify_html(value)
+    if kind == "css":
+        return minify_css(value)
     if kind == "svg":
         return re.sub(r">\s+<", "><", value).strip()
     if kind == "js":
@@ -56,6 +53,11 @@ def minify(name, kind):
     if kind == "json":
         return json.dumps(json.loads(value), separators=(",", ":"), ensure_ascii=False)
     raise ValueError(f"Unknown WebUI asset type: {kind}")
+
+
+def compress_asset(content):
+    """Return deterministic gzip bytes suitable for embedding in PROGMEM."""
+    return compress_gzip(content.encode("utf-8"))
 
 
 def generate_header():
@@ -69,21 +71,24 @@ def generate_header():
         f'#define UI_LANGUAGE "{LANGUAGE}"',
         "",
     ]
+    raw_total = minified_total = compressed_total = 0
     for constant, filename, kind in ASSETS:
-        content = minify(filename, kind)
-        if kind == "gzip_html":
-            encoded = ", ".join(f"0x{byte:02x}" for byte in content)
-            lines.append(f"const uint8_t {constant}[] PROGMEM = {{{encoded}}};")
-            continue
-        if ')WEBUI"' in content:
-            raise ValueError(f"Raw-string delimiter appears in {filename}")
-        lines.append(
-            f'const char {constant}[] PROGMEM = R"WEBUI({content})WEBUI";'
-        )
+        source = translate_asset(filename, (WEB_DIR / filename).read_text(encoding="utf-8"), LANGUAGE, FIRMWARE_VERSION)
+        minified = minify(filename, kind)
+        compressed = compress_asset(minified)
+        raw_total += len(source.encode("utf-8"))
+        minified_total += len(minified.encode("utf-8"))
+        compressed_total += len(compressed)
+        encoded = ", ".join(f"0x{byte:02x}" for byte in compressed)
+        lines.append(f"const uint8_t {constant}[] PROGMEM = {{{encoded}}};")
     generated = "\n".join(lines) + "\n"
     if not OUTPUT.exists() or OUTPUT.read_text(encoding="utf-8") != generated:
         OUTPUT.write_text(generated, encoding="utf-8", newline="\n")
         print(f"Generated {LANGUAGE} WebUI header: {OUTPUT.relative_to(PROJECT_DIR)}")
+    print(
+        f"WebUI assets ({LANGUAGE}): {raw_total} raw -> {minified_total} minified -> "
+        f"{compressed_total} gzip bytes"
+    )
 
 
 generate_header()

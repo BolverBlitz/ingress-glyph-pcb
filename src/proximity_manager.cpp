@@ -1138,6 +1138,6 @@ void ProximityManager::writePeople(JsonArray array, const String &query) const {
   for (uint8_t i = 0; i < context.resultCount; ++i) {
     JsonObject item = array[i].as<JsonObject>();
     item["lastSeen"] = histories[i].lastSeen;
-    item["totalSeconds"] = histories[i].totalSeconds;
+    setJsonUint64(item["totalSeconds"], histories[i].totalSeconds);
   }
 }

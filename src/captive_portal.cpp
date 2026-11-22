@@ -1,6 +1,6 @@
 #include "captive_portal.h"
 
-#include <ArduinoJson.h>
+#include "firmware_json.h"
 #include <LittleFS.h>
 #include <Update.h>
 #include <WiFi.h>
@@ -236,47 +236,30 @@ void GlyphWebServer::stopHotspot() {
 }
 
 void GlyphWebServer::registerRoutes() {
-  // Static resources
-  server_.on("/", HTTP_GET, [this] {
-    server_.sendHeader("Content-Encoding", "gzip");
-    server_.send_P(200, "text/html", reinterpret_cast<const char *>(MAIN_PAGE_GZIP), sizeof(MAIN_PAGE_GZIP));
-  });
-  server_.on("/draw", HTTP_GET, [this] {
-    server_.sendHeader("Content-Encoding", "gzip");
-    server_.send_P(200, "text/html", reinterpret_cast<const char *>(DRAW_PAGE_GZIP), sizeof(DRAW_PAGE_GZIP));
-  });
-  server_.on("/settings", HTTP_GET, [this] {
-    server_.sendHeader("Content-Encoding", "gzip");
-    server_.send_P(200, "text/html",
-                   reinterpret_cast<const char *>(SETTINGS_PAGE_GZIP),
-                   sizeof(SETTINGS_PAGE_GZIP));
-  });
-  server_.on("/help", HTTP_GET, [this] {
-    server_.sendHeader("Content-Encoding", "gzip");
-    server_.send_P(200, "text/html",
-                   reinterpret_cast<const char *>(HELP_BUTTONS_PAGE_GZIP),
-                   sizeof(HELP_BUTTONS_PAGE_GZIP));
-  });
-  server_.on("/help/settings", HTTP_GET, [this] {
-    server_.sendHeader("Content-Encoding", "gzip");
-    server_.send_P(200, "text/html",
-                   reinterpret_cast<const char *>(HELP_SETTINGS_PAGE_GZIP),
-                   sizeof(HELP_SETTINGS_PAGE_GZIP));
-  });
-  server_.on("/nearby", HTTP_GET, [this] {
-    server_.sendHeader("Content-Encoding", "gzip");
-    server_.send_P(200, "text/html", reinterpret_cast<const char *>(NEARBY_PAGE_GZIP), sizeof(NEARBY_PAGE_GZIP));
-  });
-  server_.on("/index.css", HTTP_GET, [this] { server_.send_P(200, "text/css", MAIN_CSS); });
-  server_.on("/draw.css", HTTP_GET, [this] { server_.send_P(200, "text/css", DRAW_CSS); });
-  server_.on("/settings.css", HTTP_GET, [this] { server_.send_P(200, "text/css", SETTINGS_CSS); });
-  server_.on("/nearby.css", HTTP_GET, [this] { server_.send_P(200, "text/css", NEARBY_CSS); });
-  server_.on("/flashlight.css", HTTP_GET, [this] { server_.send_P(200, "text/css", FLASHLIGHT_CSS); });
-  server_.on("/flashlight.js", HTTP_GET, [this] { server_.send_P(200, "application/javascript; charset=utf-8", FLASHLIGHT_JS); });
-  // WPA support
-  server_.on("/manifest.webmanifest", HTTP_GET, [this] { server_.send_P(200, "application/manifest+json", PWA_MANIFEST); });
-  server_.on("/sw.js", HTTP_GET, [this] { server_.send_P(200, "application/javascript", SERVICE_WORKER); });
-  server_.on("/icon.svg", HTTP_GET, [this] { server_.send_P(200, "image/svg+xml", APP_ICON); });
+  // Store and serve all static assets as gzip; the browser decompresses them.
+  const auto gzipRoute = [this](const char *path, const char *type,
+                                const uint8_t *bytes, size_t size) {
+    server_.on(path, HTTP_GET, [this, type, bytes, size] {
+      server_.sendHeader("Content-Encoding", "gzip");
+      server_.send_P(200, type, reinterpret_cast<const char *>(bytes), size);
+    });
+  };
+  gzipRoute("/", "text/html", MAIN_PAGE_GZIP, sizeof(MAIN_PAGE_GZIP));
+  gzipRoute("/draw", "text/html", DRAW_PAGE_GZIP, sizeof(DRAW_PAGE_GZIP));
+  gzipRoute("/settings", "text/html", SETTINGS_PAGE_GZIP, sizeof(SETTINGS_PAGE_GZIP));
+  gzipRoute("/help", "text/html", HELP_BUTTONS_PAGE_GZIP, sizeof(HELP_BUTTONS_PAGE_GZIP));
+  gzipRoute("/help/settings", "text/html", HELP_SETTINGS_PAGE_GZIP, sizeof(HELP_SETTINGS_PAGE_GZIP));
+  gzipRoute("/nearby", "text/html", NEARBY_PAGE_GZIP, sizeof(NEARBY_PAGE_GZIP));
+  gzipRoute("/index.css", "text/css", MAIN_CSS_GZIP, sizeof(MAIN_CSS_GZIP));
+  gzipRoute("/draw.css", "text/css", DRAW_CSS_GZIP, sizeof(DRAW_CSS_GZIP));
+  gzipRoute("/settings.css", "text/css", SETTINGS_CSS_GZIP, sizeof(SETTINGS_CSS_GZIP));
+  gzipRoute("/nearby.css", "text/css", NEARBY_CSS_GZIP, sizeof(NEARBY_CSS_GZIP));
+  gzipRoute("/flashlight.css", "text/css", FLASHLIGHT_CSS_GZIP, sizeof(FLASHLIGHT_CSS_GZIP));
+  gzipRoute("/flashlight.js", "application/javascript; charset=utf-8", FLASHLIGHT_JS_GZIP, sizeof(FLASHLIGHT_JS_GZIP));
+  // PWA resources
+  gzipRoute("/manifest.webmanifest", "application/manifest+json", PWA_MANIFEST_GZIP, sizeof(PWA_MANIFEST_GZIP));
+  gzipRoute("/sw.js", "application/javascript", SERVICE_WORKER_GZIP, sizeof(SERVICE_WORKER_GZIP));
+  gzipRoute("/icon.svg", "image/svg+xml", APP_ICON_GZIP, sizeof(APP_ICON_GZIP));
   // API endpoints
   server_.on("/api/status", HTTP_GET, [this] { sendStatus(); });
   server_.on("/api/settings", HTTP_GET, [this] { sendSettings(); });

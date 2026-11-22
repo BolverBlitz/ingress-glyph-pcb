@@ -110,9 +110,13 @@ release/timeout rules and malformed or stale packets.
 
 ## Build and flash
 
-Install Python and PlatformIO, then run these commands from the repository root:
+Install Python, then install/update PlatformIO and the project dependencies
+from the repository root. Updating dependencies avoids silently retaining an
+older cached ESP32 platform than release CI uses:
 
 ```powershell
+python -m pip install --upgrade platformio
+python -m platformio pkg update
 python -m platformio run
 python -m platformio run -e esp32-c3-devkitm-1-en --target upload --upload-port COM11
 ```
@@ -163,8 +167,12 @@ esp32-c3-devkitm-1-de` or `-e esp32-c3-devkitm-1-ja` to flash another language.
 
 Keep WebUI JavaScript readable, with indented functions and comments. The Python
 pre-build script translates the sources, minifies HTML, JavaScript and CSS, and
-embeds the result in firmware before flashing. It uses the pinned `minify-html`
-dependency from `scripts/requirements-web-ui.txt`, automatically installed into
+gzip-compresses all static assets before embedding them in firmware. Assets
+are served directly from flash with `Content-Encoding: gzip`; decompression
+happens in the browser. Each build reports the raw, minified and compressed
+payload sizes. It compares standard gzip with Zopfli and keeps the smaller
+stream. The script uses the pinned `minify-html` and `zopfli`
+dependencies from `scripts/requirements-web-ui.txt`, automatically installed into
 `.pio/web-ui-deps` on the first build if needed. This first build requires
 internet access; later builds reuse the dependency. Node.js is not needed to
 build or flash. Generated files do not overwrite the sources in `WebUI/`.
@@ -176,6 +184,38 @@ syntax for all three languages; otherwise those checks are skipped.
 Link-time optimization reduces firmware size. A final binary-size check rejects
 images that exceed the OTA slot, including image headers and alignment padding.
 
+LED frames use a fixed GRBW buffer and the SK6812 RMT driver directly, avoiding
+a second LED transport backend and its firmware overhead.
+
+JSON stores 32-bit integers and floats for IDs, UTC timestamps, settings and
+sensor readings, without ArduinoJson's 64-bit extension pool. The accumulated
+encounter-time counter retains its full 64-bit decimal output through an
+explicit raw-number writer. Tests cover its maximum value, unsigned IDs and
+timestamps beyond 2038.
+
+`src/firmware_build_config.h` disables Arduino's unused Espressif network
+provisioning event integration. Wi-Fi credentials are configured through this
+project's captive portal or serial console. This lets the linker discard the
+provisioning manager, protobuf and provisioning security code. Using Arduino's
+`WiFiProv` feature in future requires restoring this configuration option.
+
+UTC synchronization uses the thread-safe SNTP API directly, avoiding the
+unused POSIX timezone parser. Formatting uses the vendored nanoprintf C11
+formatter, including floats and 64-bit integers, through linker wrappers
+for the standard printf family. Its upstream revision and license are recorded
+in `lib/nanoprintf/`. Release builds retain the fixed-decimal float formats used
+by firmware diagnostics; debug builds also enable scientific/general/hex float
+formats.
+
+Release builds omit automatic flash core dumps and the full SDK error-name
+catalogue. Serial panic reporting and reboot remain enabled. Common errors
+retain their names; other errors use `ESP_ERR_UNKNOWN`, with numeric codes in
+SDK diagnostics and in `esp_err_to_name_r()` output. Debug builds retain the
+full SDK diagnostics. Release assertions still evaluate and abort on failure,
+but omit their file/function/expression text, and internal NimBLE host logging
+is disabled. Application logs remain available. The partition layout and stored
+application data are unchanged by these optimizations.
+
 The source build disables C++ exceptions and unwind-table generation because
 the application and its source dependencies use explicit error returns. Unwind
 tables in the precompiled ESP-IDF/C++ libraries are retained. New dependencies
@@ -186,6 +226,11 @@ bond persistence are disabled through the library's `MYNEWT_VAL_*` overrides.
 BLE discovery and public username/glyph reads remain available. Button-based
 friend pairing stores an application friend record, independently of BLE bonds.
 Private or authenticated BLE features would require restoring security support.
+
+The GATT configuration retains service/characteristic discovery and individual
+short/long reads and writes used by friendship exchanges. Unused batch reads,
+included-service discovery, reliable multi-attribute writes and multi-handle
+notifications are compiled out.
 
 For an interactive build, flash, hardware-revision setup, and optional Wi-Fi
 setup, run one of the helper scripts from the repository root:
