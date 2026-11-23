@@ -2,6 +2,10 @@
 #include <cstdarg>
 #include <cstdio>
 
+#if defined(ESP_PLATFORM)
+#include <sys/lock.h>
+#endif
+
 #define NANOPRINTF_IMPLEMENTATION
 #define NANOPRINTF_USE_FIELD_WIDTH_FORMAT_SPECIFIERS 1
 #define NANOPRINTF_USE_PRECISION_FORMAT_SPECIFIERS 1
@@ -40,12 +44,17 @@ int formatFile(FILE *file, const char *format, va_list args) {
   FileContext context{file, false};
 #if defined(_MSC_VER)
   _lock_file(file);
+#elif defined(ESP_PLATFORM)
+  // ESP32's newlib omits flockfile/funlockfile; use its recursive lock API.
+  if (!(file->_flags & __SSTR)) _lock_acquire_recursive(&file->_lock);
 #else
   flockfile(file);
 #endif
   const int result = npf_vpprintf(putFile, &context, format, args);
 #if defined(_MSC_VER)
   _unlock_file(file);
+#elif defined(ESP_PLATFORM)
+  if (!(file->_flags & __SSTR)) _lock_release_recursive(&file->_lock);
 #else
   funlockfile(file);
 #endif

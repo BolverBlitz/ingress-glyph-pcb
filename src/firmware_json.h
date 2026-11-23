@@ -14,8 +14,7 @@ static_assert(sizeof(ArduinoJson::JsonUInt) == 4, "JSON IDs must retain uint32_t
 static_assert(sizeof(ArduinoJson::JsonFloat) == 4, "JSON must match sensor float precision");
 #endif
 
-template <typename TVariant>
-inline bool setJsonUint64(TVariant target, uint64_t value) {
+inline bool setJsonUint64(JsonVariant target, uint64_t value) {
   char decimal[21];  // UINT64_MAX has 20 decimal digits, plus the terminator.
   std::snprintf(decimal, sizeof(decimal), "%llu",
                 static_cast<unsigned long long>(value));

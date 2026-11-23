@@ -17,7 +17,7 @@ extern "C" [[noreturn]] void IRAM_ATTR __assert(const char *, int, const char *)
 }
 // Satisfy the SDK's forced archive anchor without pulling its verbose handler
 // back into the link alongside these replacements.
-extern "C" void esp_libc_include_assert_impl(void) {}
+extern "C" void newlib_include_assert_impl(void) {}
 #endif
 
 namespace {
